@@ -105,3 +105,36 @@ Official references:
 - https://tailwindcss.com/docs/installation/using-vite
 - https://better-auth.com/docs/integrations/fastify
 - https://better-auth.com/docs/adapters/mongo
+
+## Frontend routes
+
+React Router maps / to HomePage, /login to LoginPage, /sign-up to SignupPage,
+and unmatched paths to NotFoundPage. main.tsx enables BrowserRouter;
+router.tsx defines routes; App.tsx renders shared navigation and an Outlet.
+Pages compose feature components in features/auth/components. Form submission
+remains in the existing forms. Routes are public for now; session guards and
+post-login navigation are future steps. Sign-out is available on the home page.
+
+Check links, browser Back/Forward, direct visits, and refresh on /login and /sign-up.
+Vite handles local page fallback. A production host must serve index.html for
+frontend routes while keeping /api requests routed to the backend.
+
+Routing reference: https://reactrouter.com/start/declarative/routing
+
+## WebSocket learning demo
+
+The home page includes ConnectionDemo. Its networking helper connects to
+/api/signaling through Vite's WebSocket proxy. Send hello to receive a fixed
+server response. Leaving the page closes the browser connection. This public
+text-only demo has no rooms, transfer authorization, or WebRTC yet.
+Restart both dev servers after changing plugin or proxy configuration.
+
+
+## Current room milestone
+
+The signaling backend accepts create-room, join-room (with an invitation), and
+peer-message messages. Each temporary room holds at most two connections;
+messages go to the other member, and disconnects remove membership.
+Rooms are lost when the backend restarts. Account-based WebSocket access checks
+and frontend create/join controls are not implemented yet. The current demo
+button receives "Join or create a room first" until its socket joins a room.
