@@ -24,4 +24,23 @@ export function registerAuthRoutes(app: FastifyInstance, auth: Auth, baseURL: st
       return reply.send(await response.text());
     },
   });
+  app.get("/api/me", async (request, reply) => {
+      const session = await auth.api.getSession({
+          headers: fromNodeHeaders(request.headers),
+      });
+
+      if (!session) {
+          return reply.code(401).send({
+              error: "You must be signed in.",
+          });
+      }
+
+      return {
+          user: {
+              id: session.user.id,
+              name: session.user.name,
+              email: session.user.email,
+          },
+      };
+  });
 }
