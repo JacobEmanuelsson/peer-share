@@ -1,5 +1,5 @@
 import { useState, type SubmitEvent } from "react";
-import { authClient } from "./api/authClient";
+import { authClient } from "../api/authClient";
 
 export default function SignupForm() {
 

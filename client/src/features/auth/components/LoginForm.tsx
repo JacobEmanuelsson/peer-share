@@ -1,5 +1,5 @@
 import { useState, type SubmitEvent } from "react";
-import { authClient } from "./api/authClient";
+import { authClient } from "../api/authClient";
 
 export default function LoginForm() {
 
@@ -30,6 +30,7 @@ export default function LoginForm() {
 
             if(result.error) {
                 setError(result.error.message ?? "Login failed");
+                return;
             }
             
             setSuccess(true);
