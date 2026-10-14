@@ -1,3 +1,4 @@
+import ConnectionDemo from '../features/signaling/components/ConnectionDemo';
 import { Link } from 'react-router';
 import { authClient } from '../features/auth/api/authClient';
 import LogoutButton from '../features/auth/components/LogoutButton';
@@ -20,7 +21,7 @@ export default function HomePage() {
       ) : (
         <Link to="/login" className="text-teal-300 underline">Sign in</Link>
       )}
+      <ConnectionDemo />
     </>
   );
 }
-

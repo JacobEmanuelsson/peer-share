@@ -1,11 +1,16 @@
 import Fastify from 'fastify';
+import websocket from '@fastify/websocket';
+import { registerSignalingGateway } from './modules/signaling/signaling.gateway.js';
 
-// Building the app separately from listening makes future integration tests easier.
 export function buildApp() {
   const app = Fastify({ logger: true });
 
-  // Liveness only: this does not check MongoDB or claim database readiness.
-  app.get('/api/health', async () => ({ status: 'ok' }));
+  app.register(websocket, { options: { maxPayload: 1024 } });
+  app.register(async (instance) => {
+    registerSignalingGateway(instance);
+  });
 
+  // Liveness only; database readiness is a separate concern.
+  app.get('/api/health', async () => ({ status: 'ok' }));
   return app;
 }
