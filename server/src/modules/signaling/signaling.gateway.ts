@@ -1,7 +1,10 @@
-import type { FastifyInstance } from "fastify";
+import { fromNodeHeaders } from 'better-auth/node';
+import type { createAuth } from '../auth/auth.js';
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import { createConnectionRegistry } from "./signaling.connections.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import * as z from "zod";
-import WebSocket from "ws";
+import WebSocket, { type RawData } from "ws";
 
 type Room = {
     members: Set<WebSocket>;
@@ -21,13 +24,45 @@ const messageCheck = z.discriminatedUnion("type", [
     }).strict(),
 ]);
 
-export function registerSignalingGateway(app: FastifyInstance) {
+export function registerSignalingGateway(
+    app: FastifyInstance,
+    auth: ReturnType<typeof createAuth>,
+    allowedOrigin: string,
+) {
     // Temporary room state belongs to this gateway instance.
     const rooms = new Map<string, Room>();
+    const connections = createConnectionRegistry();
+    const verifiedIdentities = new WeakMap<FastifyRequest, { userId: string; sessionId: string }>();
 
-    app.get("/api/signaling", { websocket: true }, (socket) => {
+    app.get("/api/signaling", {
+        websocket: true,
+        preValidation: async (request, reply) => {
+            // Origin is a browser protection; session validation supplies identity.
+            if (request.headers.origin !== allowedOrigin) {
+                return reply.code(403).send({ error: "Origin is not allowed" });
+            }
+
+            const session = await auth.api.getSession({
+                headers: fromNodeHeaders(request.headers),
+                query: { disableCookieCache: true, disableRefresh: true },
+            });
+            if (!session) {
+                return reply.code(401).send({ error: "You must be signed in" });
+            }
+            verifiedIdentities.set(request, { userId: session.user.id, sessionId: session.session.id });
+        },
+    }, (socket, request) => {
         // Membership is associated with the connection, not supplied on every message.
         let currentRoomId: string | undefined;
+
+        const sessionHeader = fromNodeHeaders(request.headers);
+        const identity = verifiedIdentities.get(request);
+        verifiedIdentities.delete(request);
+        if (!identity) {
+            socket.close(1008, "Authenticated identity missing");
+            return;
+        }
+        const connection = connections.add(identity.userId, identity.sessionId, socket);
 
         function send(target: WebSocket, message: object) {
             if (target.readyState === WebSocket.OPEN) {
@@ -39,7 +74,38 @@ export function registerSignalingGateway(app: FastifyInstance) {
             send(socket, { type: "error", text });
         }
 
-        socket.on("message", (data, isBinary) => {
+        async function ensureSession(): Promise<boolean> {
+            if (socket.readyState !== WebSocket.OPEN) {
+                return false;
+            }
+
+            try {
+                const session = await auth.api.getSession({
+                    headers: sessionHeader,
+                    query: {
+                        disableCookieCache: true,
+                        disableRefresh: true,
+                    },
+                });
+
+                if (socket.readyState !== WebSocket.OPEN) {
+                    return false;
+                }
+
+                if (!session || session.user.id !== connection.userId || session.session.id !== connection.sessionId) {
+                    socket.close(1008, "Session expired or revoked");
+                    return false;
+                }
+
+                return true;
+            } catch {
+                socket.close(1011, "Session verification unavailable");
+                return false;
+            }
+        }
+
+
+        function processMessage(data: RawData, isBinary: boolean) {
             if (isBinary) {
                 socket.close(1003, "Text messages only");
                 return;
@@ -108,9 +174,42 @@ export function registerSignalingGateway(app: FastifyInstance) {
                 if (member === socket) continue;
                 send(member, { type: "peer-message", text: result.data.text });
             }
+        }
+
+        // Keep one message in flight so asynchronous session checks cannot race.
+        // Overlapping messages are rejected in this prototype, not queued.
+        let processingMessage = false;
+        socket.on("message", async (data, isBinary) => {
+            if (processingMessage) {
+                reportError("Please wait for the previous message");
+                return;
+            }
+            processingMessage = true;
+            try {
+                if (!(await ensureSession())) return;
+                processMessage(data, isBinary);
+            } catch {
+                socket.close(1011, "Message processing failed");
+            } finally {
+                processingMessage = false;
+            }
         });
 
+        let checkingIdleSession = false;
+        const sessionTimer = setInterval(async () => {
+            if (checkingIdleSession) return;
+            checkingIdleSession = true;
+            try {
+                await ensureSession();
+            } finally {
+                checkingIdleSession = false;
+            }
+        }, 30_000);
+        sessionTimer.unref();
+
         socket.on("close", () => {
+            clearInterval(sessionTimer);
+            connections.remove(connection.connectionId);
             if (!currentRoomId) return;
             const room = rooms.get(currentRoomId);
             if (!room) return;

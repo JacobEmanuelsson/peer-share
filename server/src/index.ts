@@ -17,12 +17,14 @@ async function start() {
   const uri = requiredEnv('DATABASE_URL');
   const secret = requiredEnv('BETTER_AUTH_SECRET');
   const baseURL = requiredEnv('BETTER_AUTH_URL');
+  const allowedOrigin = new URL(baseURL).origin;
   const { client, db } = await connectMongo(uri);
-  const app = buildApp();
+  const auth = createAuth(db, secret, baseURL);
+  const app = buildApp(auth, allowedOrigin);
   app.addHook('onClose', async () => { await client.close(); });
 
   try {
-    registerAuthRoutes(app, createAuth(db, secret, baseURL), baseURL);
+    registerAuthRoutes(app, auth, baseURL);
     await app.listen({ port: 3000, host: '127.0.0.1' });
   } catch (error) {
     await app.close();
