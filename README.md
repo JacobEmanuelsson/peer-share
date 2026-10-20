@@ -125,8 +125,7 @@ Routing reference: https://reactrouter.com/start/declarative/routing
 
 The home page includes ConnectionDemo. Its networking helper connects to
 /api/signaling through Vite's WebSocket proxy. Send hello to receive a fixed
-server response. Leaving the page closes the browser connection. This public
-text-only demo has no rooms, transfer authorization, or WebRTC yet.
+server response. Leaving the page closes the browser connection. The gateway requires a trusted browser origin and a signed-in session; WebRTC is not implemented yet.
 Restart both dev servers after changing plugin or proxy configuration.
 
 
@@ -135,6 +134,88 @@ Restart both dev servers after changing plugin or proxy configuration.
 The signaling backend accepts create-room, join-room (with an invitation), and
 peer-message messages. Each temporary room holds at most two connections;
 messages go to the other member, and disconnects remove membership.
-Rooms are lost when the backend restarts. Account-based WebSocket access checks
-and frontend create/join controls are not implemented yet. The current demo
+Rooms are lost when the backend restarts. New WebSocket connections require the origin configured by BETTER_AUTH_URL and a Better Auth session. Frontend create/join controls are not implemented yet. The current demo
 button receives "Join or create a room first" until its socket joins a room.
+
+## Signaling connection access
+
+Before accepting /api/signaling, the gateway checks the exact Origin against
+new URL(BETTER_AUTH_URL).origin, then validates the session using Better Auth.
+Missing or different origins return 403. Signed-out requests return 401.
+The browser sends its applicable session cookie during the WebSocket handshake.
+Use localhost:5173 consistently in development and sign in before opening the demo.
+
+The same auth instance is passed from index.ts to buildApp and the gateway.
+These checks protect connection establishment only. Closing already-open sockets
+when sessions expire or are revoked is the next step.
+
+Run the isolated access tests (no MongoDB needed):
+
+```powershell
+npm run build --workspace server
+node --test server/test/signaling-access.test.mjs
+```
+
+The tests use a controlled session resolver and cover origin rejection, missing
+sessions, failed session lookup, cookie forwarding, and an accepted upgrade.
+
+## Open-connection session checks
+
+The gateway revalidates the original session before processing each message and
+every 30 seconds while idle. Cookie-cache reads and session refresh are disabled
+for these lookups. Revoked/expired sessions close with code 1008; lookup failures
+close with 1011. Closing clears the timer and removes room membership.
+Idle sign-out detection occurs at the next periodic check, not instantly.
+This supersedes the connection-establishment-only limitation described above.
+
+The prototype rejects overlapping messages while a session lookup is in flight.
+A bounded sequential queue and rate limits are needed before WebRTC signaling
+bursts are supported. These lookups add database traffic; the current implementation
+prioritizes clear access behavior over throughput optimization.
+
+## Authenticated connection registry
+
+Each accepted socket receives a server-generated connection ID and is bound to
+its verified Better Auth user and session IDs. The gateway owns an in-memory
+registry that can find all active connections for an account, including separate
+browser tabs or devices. Closing a socket removes only that connection.
+Session revalidation rejects changes to the connection's original identity.
+
+This is connection tracking only: targeted transfer invitations, recipient
+acceptance, and locking the selected receiver are not implemented yet. Existing
+room invitations still grant joining access to any authenticated token holder.
+Connection IDs are internal identifiers, not credentials or persistent device IDs.
+
+Registry tests: node --test server/test/signaling-connections.test.mjs
+
+## Targeted invitation creation
+
+A signed-in socket can send {"type":"create-invitation","recipientUserId":"..."}.
+The gateway derives the sender account/connection from its verified registry,
+creates a five-minute invitation, notifies the recipient's other open connections
+with invitation-received, and acknowledges the sender with invitation-created.
+A same-account invitation can reach another tab, but never the sending connection.
+If there are no open recipient connections, it returns Recipient is unavailable.
+
+signaling.invitations.ts owns a private Map retained by its returned methods.
+Lookup rejects expired records; periodic cleanup removes expired records; sender
+disconnect removes that sender connection's invitations. Records are immutable.
+The store is temporary and local to one gateway instance. Invitation acceptance,
+receiver locking, user lookup UI, and client response validation are future steps.
+The old room flow is still a separate prototype and is not account-bound.
+
+Run invitation tests after building the backend:
+node --test server/test/signaling-invitations.test.mjs
+
+## Gateway acceptance milestone
+
+Send {"type":"accept-invitation","invitationId":"..."} on an authenticated socket.
+The gateway validates the message, checks the intended recipient and original
+sender connection, then calls acceptInv with server-verified identity. First
+acceptance wins. The selected receiver and original sender receive
+invitation-accepted with receiver/sender roles; other recipient connections receive
+invitation-accepted-elsewhere. Extra client identity fields are rejected.
+
+This adds acceptance handling only. Forwarding still uses the separate prototype
+room flow, not accepted participant IDs. Accepted-record expiry and disconnect
+policies must be addressed before using acceptance to authorize ongoing signaling.
