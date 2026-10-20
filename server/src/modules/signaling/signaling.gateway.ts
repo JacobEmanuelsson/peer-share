@@ -1,3 +1,4 @@
+import { createInvitationStore } from './signaling.invitations.js';
 import { fromNodeHeaders } from 'better-auth/node';
 import type { createAuth } from '../auth/auth.js';
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -12,6 +13,14 @@ type Room = {
 };
 
 const messageCheck = z.discriminatedUnion("type", [
+    z.object({
+        type: z.literal("accept-invitation"),
+        invitationId: z.string().uuid(),
+    }).strict(),
+    z.object({
+        type: z.literal("create-invitation"),
+        recipientUserId: z.string().trim().min(1).max(128),
+    }).strict(),
     z.object({ type: z.literal("create-room") }).strict(),
     z.object({
         type: z.literal("join-room"),
@@ -32,6 +41,11 @@ export function registerSignalingGateway(
     // Temporary room state belongs to this gateway instance.
     const rooms = new Map<string, Room>();
     const connections = createConnectionRegistry();
+    // One store for all connections, not one Map per incoming message.
+    const invitations = createInvitationStore();
+    const invitationCleanup = setInterval(() => invitations.removeExpired(), 30_000);
+    invitationCleanup.unref();
+    app.addHook("onClose", async () => { clearInterval(invitationCleanup); });
     const verifiedIdentities = new WeakMap<FastifyRequest, { userId: string; sessionId: string }>();
 
     app.get("/api/signaling", {
@@ -125,6 +139,81 @@ export function registerSignalingGateway(
                 return;
             }
 
+            if (result.data.type === "create-invitation") {
+                const recipients = connections.getForUser(result.data.recipientUserId)
+                    .filter(candidate => candidate.socket.readyState === WebSocket.OPEN
+                        && candidate.connectionId !== connection.connectionId);
+                if (recipients.length === 0) {
+                    reportError("Recipient is unavailable");
+                    return;
+                }
+
+                const invitation = invitations.create({
+                    senderUserId: connection.userId,
+                    senderConnectionId: connection.connectionId,
+                    recipientUserId: result.data.recipientUserId,
+                });
+                for (const recipient of recipients) {
+                    send(recipient.socket, {
+                        type: "invitation-received",
+                        invitationId: invitation.id,
+                        senderUserId: invitation.senderUserId,
+                        expiresAt: invitation.expiresAt,
+                    });
+                }
+                send(socket, {
+                    type: "invitation-created",
+                    invitationId: invitation.id,
+                    recipientUserId: invitation.recipientUserId,
+                    expiresAt: invitation.expiresAt,
+                });
+                return;
+            }
+            if (result.data.type === "accept-invitation") {
+                const invitation = invitations.getById(result.data.invitationId);
+                if (!invitation || invitation.recipientUserId !== connection.userId) {
+                    reportError("Invitation is unavailable");
+                    return;
+                }
+
+                const sender = connections.getForUser(invitation.senderUserId)
+                    .find(candidate => candidate.connectionId === invitation.senderConnectionId
+                        && candidate.socket.readyState === WebSocket.OPEN);
+                if (!sender) {
+                    reportError("The sender is no longer connected");
+                    return;
+                }
+
+                // Identity comes from the authenticated socket, not from client fields.
+                // No await between this check/update and notifications: one acceptance wins.
+                const accepted = invitations.acceptInv(
+                    invitation.id, connection.userId, connection.connectionId,
+                );
+                if (!accepted) {
+                    reportError("Invitation could not be accepted");
+                    return;
+                }
+
+                send(socket, {
+                    type: "invitation-accepted",
+                    invitationId: invitation.id,
+                    role: "receiver",
+                });
+                send(sender.socket, {
+                    type: "invitation-accepted",
+                    invitationId: invitation.id,
+                    role: "sender",
+                });
+                for (const other of connections.getForUser(connection.userId)) {
+                    if (other.connectionId === connection.connectionId
+                        || other.connectionId === sender.connectionId) continue;
+                    send(other.socket, {
+                        type: "invitation-accepted-elsewhere",
+                        invitationId: invitation.id,
+                    });
+                }
+                return;
+            }
             if (result.data.type === "create-room") {
                 if (currentRoomId) {
                     reportError("You already belong to a room");
@@ -209,6 +298,7 @@ export function registerSignalingGateway(
 
         socket.on("close", () => {
             clearInterval(sessionTimer);
+            invitations.removeForSender(connection.connectionId);
             connections.remove(connection.connectionId);
             if (!currentRoomId) return;
             const room = rooms.get(currentRoomId);
