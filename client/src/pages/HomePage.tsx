@@ -17,11 +17,11 @@ export default function HomePage() {
         <>
           <p className="mb-4">Welcome, {session.user.name}.</p>
           <LogoutButton />
+          <ConnectionDemo key={session.user.id} userId={session.user.id} />
         </>
       ) : (
         <Link to="/login" className="text-teal-300 underline">Sign in</Link>
       )}
-      <ConnectionDemo />
     </>
   );
 }

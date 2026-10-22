@@ -187,11 +187,11 @@ for (const sameAccount of [false, true]) {
       first.send({ type: 'accept-invitation', invitationId, userId: recipientId });
       assert.equal((await first.next()).text, 'Invalid message');
       first.send({ type: 'accept-invitation', invitationId });
-      assert.deepEqual(await first.next(), { type: 'invitation-accepted', invitationId, role: 'receiver' });
-      assert.deepEqual(await sender.next(), { type: 'invitation-accepted', invitationId, role: 'sender' });
+      assert.deepEqual(await first.next(), { type: 'invitation-accepted', invitationId, pairId: invitationId, role: 'receiver' });
+      assert.deepEqual(await sender.next(), { type: 'invitation-accepted', invitationId, pairId: invitationId, role: 'sender' });
       assert.deepEqual(await second.next(), { type: 'invitation-accepted-elsewhere', invitationId });
       second.send({ type: 'accept-invitation', invitationId });
-      assert.equal((await second.next()).text, 'Invitation could not be accepted');
+      assert.equal((await second.next()).type, 'error');
       first.send({ type: 'accept-invitation', invitationId });
       assert.equal((await first.next()).type, 'error');
       outsider.send({ type: 'accept-invitation', invitationId: '00000000-0000-4000-8000-000000000000' });

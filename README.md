@@ -1,5 +1,10 @@
 # Peer Share
 
+> Current signaling milestone: accepted pairs now control peer-message forwarding.
+> The old room routes are removed. See [the current protocol](server/src/modules/signaling/README.md).
+> Older milestone notes below describe previous implementations.
+
+
 A learning and portfolio project for browser-to-browser file sharing.
 Currently: React/TypeScript/Tailwind starter page, Fastify health endpoint,
 local MongoDB, and Better Auth server integration. Sign-in forms and file
@@ -219,3 +224,17 @@ invitation-accepted-elsewhere. Extra client identity fields are rejected.
 This adds acceptance handling only. Forwarding still uses the separate prototype
 room flow, not accepted participant IDs. Accepted-record expiry and disconnect
 policies must be addressed before using acceptance to authorize ongoing signaling.
+
+## Frontend invitation controls
+
+Sign in on two accounts or open multiple tabs on one account. Each signed-in home
+page shows its account ID. The sender enters the recipient's account ID and clicks
+Invite. The receiving tab clicks Accept invitation; other recipient tabs see that
+it was accepted elsewhere. Only the selected pair can use Send message.
+Leaving the home page or signing out closes that tab's socket and ends its pair.
+A new invitation is required to pair again. Refresh reconnects a lost connection.
+These are server-relayed text messages, not WebRTC file transfer yet.
+
+Browser verification covered actual signup/session cookies, unavailable recipients,
+recipient tabs, acceptance, two-way messages, disconnect/re-pair, and sign-out
+cleanup. Temporary verification accounts were removed afterward.

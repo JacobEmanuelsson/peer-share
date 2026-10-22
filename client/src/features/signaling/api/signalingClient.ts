@@ -1,8 +1,24 @@
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
+import * as z from "zod";
+
+export type ClientMessage =
+    | {
+        type: "create-invitation";
+        recipientUserId: string;
+    }
+    | {
+        type: "accept-invitation";
+        invitationId: string;
+    }
+    | {
+        type: "peer-message";
+        pairId: string;
+        text: string;
+    };
 
 type Handlers = {
   onStatus: (status: ConnectionStatus) => void;
-  onMessage: (message: string) => void;
+  onMessage: (message: ServerMessage) => void;
   onError: (message: string) => void;
 };
 
@@ -16,8 +32,31 @@ export function connectSignaling(handlers: Handlers) {
   socket.addEventListener('open', () => {
     if (!disposed) handlers.onStatus('connected');
   });
-  socket.addEventListener('message', (event) => {
-    if (!disposed && typeof event.data === 'string') handlers.onMessage(event.data);
+  socket.addEventListener("message", (event) => {
+      if (disposed) return;
+
+      if (typeof event.data !== "string") {
+          handlers.onError("Unexpected binary response.");
+          return;
+      }
+
+      let message: unknown;
+
+      try {
+          message = JSON.parse(event.data);
+      } catch {
+          handlers.onError("The server returned invalid JSON.");
+          return;
+      }
+
+      const result = serverMessageSchema.safeParse(message);
+
+      if (!result.success) {
+          handlers.onError("The server returned an invalid message.");
+          return;
+      }
+
+      handlers.onMessage(result.data);
   });
   socket.addEventListener('error', () => {
     if (!disposed) handlers.onError('WebSocket connection failed.');
@@ -27,10 +66,13 @@ export function connectSignaling(handlers: Handlers) {
   });
 
   return {
-    send(message: string): boolean {
-      if (disposed || socket.readyState !== WebSocket.OPEN) return false;
-      socket.send(message);
-      return true;
+    send(message: ClientMessage): boolean {
+        if (disposed || socket.readyState !== WebSocket.OPEN) {
+            return false;
+        }
+
+        socket.send(JSON.stringify(message));
+        return true;
     },
     close() {
       disposed = true;
@@ -38,3 +80,43 @@ export function connectSignaling(handlers: Handlers) {
     },
   };
 }
+const serverMessageSchema = z.discriminatedUnion("type", [
+    z.object({
+        type: z.literal("invitation-created"),
+        invitationId: z.string().uuid(),
+        recipientUserId: z.string(),
+        expiresAt: z.number(),
+    }),
+    z.object({
+        type: z.literal("invitation-received"),
+        invitationId: z.string().uuid(),
+        senderUserId: z.string(),
+        expiresAt: z.number(),
+    }),
+    z.object({
+        type: z.literal("invitation-accepted"),
+        invitationId: z.string().uuid(),
+        pairId: z.string().uuid(),
+        role: z.enum(["sender", "receiver"]),
+    }),
+    z.object({
+        type: z.literal("invitation-accepted-elsewhere"),
+        invitationId: z.string().uuid(),
+    }),
+    z.object({
+        type: z.literal("peer-message"),
+        pairId: z.string().uuid(),
+        text: z.string().min(1).max(200),
+    }),
+    z.object({
+        type: z.literal("pair-ended"),
+        pairId: z.string().uuid(),
+        reason: z.literal("peer-disconnected"),
+    }),
+    z.object({
+        type: z.literal("error"),
+        text: z.string(),
+    }),
+]);
+
+export type ServerMessage = z.infer<typeof serverMessageSchema>;

@@ -1,16 +1,11 @@
+import { createPairStore } from './signaling.pairs.js';
 import { createInvitationStore } from './signaling.invitations.js';
 import { fromNodeHeaders } from 'better-auth/node';
 import type { createAuth } from '../auth/auth.js';
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { createConnectionRegistry } from "./signaling.connections.js";
-import { randomBytes, randomUUID } from "node:crypto";
 import * as z from "zod";
 import WebSocket, { type RawData } from "ws";
-
-type Room = {
-    members: Set<WebSocket>;
-    invitationToken: string;
-};
 
 const messageCheck = z.discriminatedUnion("type", [
     z.object({
@@ -21,14 +16,9 @@ const messageCheck = z.discriminatedUnion("type", [
         type: z.literal("create-invitation"),
         recipientUserId: z.string().trim().min(1).max(128),
     }).strict(),
-    z.object({ type: z.literal("create-room") }).strict(),
-    z.object({
-        type: z.literal("join-room"),
-        roomId: z.string().uuid(),
-        invitationToken: z.string().length(43),
-    }).strict(),
     z.object({
         type: z.literal("peer-message"),
+        pairId: z.string().uuid(),
         text: z.string().min(1).max(200),
     }).strict(),
 ]);
@@ -38,8 +28,8 @@ export function registerSignalingGateway(
     auth: ReturnType<typeof createAuth>,
     allowedOrigin: string,
 ) {
-    // Temporary room state belongs to this gateway instance.
-    const rooms = new Map<string, Room>();
+    const pairs = createPairStore();
+    const sessionValidators = new Map<string, () => Promise<boolean>>();
     const connections = createConnectionRegistry();
     // One store for all connections, not one Map per incoming message.
     const invitations = createInvitationStore();
@@ -48,6 +38,18 @@ export function registerSignalingGateway(
     app.addHook("onClose", async () => { clearInterval(invitationCleanup); });
     const verifiedIdentities = new WeakMap<FastifyRequest, { userId: string; sessionId: string }>();
 
+    function sendToConnection(connectionId: string, message: object) {
+        const target = connections.getById(connectionId);
+        if (target?.socket.readyState === WebSocket.OPEN) target.socket.send(JSON.stringify(message));
+    }
+
+    function endPair(connectionId: string) {
+        const pair = pairs.removeForConnection(connectionId);
+        if (!pair) return;
+        const message = { type: "pair-ended", pairId: pair.pairId, reason: "peer-disconnected" };
+        sendToConnection(pair.senderConnectionId, message);
+        sendToConnection(pair.receiverConnectionId, message);
+    }
     app.get("/api/signaling", {
         websocket: true,
         preValidation: async (request, reply) => {
@@ -66,9 +68,6 @@ export function registerSignalingGateway(
             verifiedIdentities.set(request, { userId: session.user.id, sessionId: session.session.id });
         },
     }, (socket, request) => {
-        // Membership is associated with the connection, not supplied on every message.
-        let currentRoomId: string | undefined;
-
         const sessionHeader = fromNodeHeaders(request.headers);
         const identity = verifiedIdentities.get(request);
         verifiedIdentities.delete(request);
@@ -108,18 +107,22 @@ export function registerSignalingGateway(
 
                 if (!session || session.user.id !== connection.userId || session.session.id !== connection.sessionId) {
                     socket.close(1008, "Session expired or revoked");
+                    endPair(connection.connectionId);
                     return false;
                 }
 
                 return true;
             } catch {
                 socket.close(1011, "Session verification unavailable");
+                endPair(connection.connectionId);
                 return false;
             }
         }
 
 
-        function processMessage(data: RawData, isBinary: boolean) {
+        sessionValidators.set(connection.connectionId, ensureSession);
+
+        async function processMessage(data: RawData, isBinary: boolean) {
             if (isBinary) {
                 socket.close(1003, "Text messages only");
                 return;
@@ -140,6 +143,10 @@ export function registerSignalingGateway(
             }
 
             if (result.data.type === "create-invitation") {
+                if (pairs.getForConnection(connection.connectionId)) {
+                    reportError("This connection already has an active pair");
+                    return;
+                }
                 const recipients = connections.getForUser(result.data.recipientUserId)
                     .filter(candidate => candidate.socket.readyState === WebSocket.OPEN
                         && candidate.connectionId !== connection.connectionId);
@@ -184,6 +191,17 @@ export function registerSignalingGateway(
                     return;
                 }
 
+                // Validate the selected sender before binding. Awaiting may allow another
+                // acceptance or disconnect, so repeat all local checks afterward.
+                if (!(await sessionValidators.get(sender.connectionId)?.())) {
+                    reportError("The sender is no longer available");
+                    return;
+                }
+                if (socket.readyState !== WebSocket.OPEN || sender.socket.readyState !== WebSocket.OPEN) return;
+                if (pairs.getForConnection(connection.connectionId) || pairs.getForConnection(sender.connectionId)) {
+                    reportError("A selected connection already has an active pair");
+                    return;
+                }
                 // Identity comes from the authenticated socket, not from client fields.
                 // No await between this check/update and notifications: one acceptance wins.
                 const accepted = invitations.acceptInv(
@@ -194,14 +212,25 @@ export function registerSignalingGateway(
                     return;
                 }
 
+                const pair = pairs.create({
+                    pairId: invitation.id,
+                    senderConnectionId: sender.connectionId,
+                    receiverConnectionId: connection.connectionId,
+                });
+                if (!pair) throw new Error("Pair creation invariant failed");
+                // The accepted pair now owns the lifetime; the invitation is consumed.
+                invitations.remove(invitation.id);
+
                 send(socket, {
                     type: "invitation-accepted",
                     invitationId: invitation.id,
+                    pairId: pair.pairId,
                     role: "receiver",
                 });
                 send(sender.socket, {
                     type: "invitation-accepted",
                     invitationId: invitation.id,
+                    pairId: pair.pairId,
                     role: "sender",
                 });
                 for (const other of connections.getForUser(connection.userId)) {
@@ -214,57 +243,26 @@ export function registerSignalingGateway(
                 }
                 return;
             }
-            if (result.data.type === "create-room") {
-                if (currentRoomId) {
-                    reportError("You already belong to a room");
-                    return;
-                }
-                const roomId = randomUUID();
-                const invitationToken = randomBytes(32).toString("base64url");
-                rooms.set(roomId, { members: new Set([socket]), invitationToken });
-                currentRoomId = roomId;
-                send(socket, { type: "room-created", roomId, invitationToken });
+            const pair = pairs.getById(result.data.pairId);
+            if (!pair || (pair.senderConnectionId !== connection.connectionId
+                && pair.receiverConnectionId !== connection.connectionId)) {
+                reportError("You are not a participant in this active pair");
                 return;
             }
-
-            if (result.data.type === "join-room") {
-                if (currentRoomId) {
-                    reportError("You already belong to a room");
-                    return;
-                }
-                const room = rooms.get(result.data.roomId);
-                if (!room || room.invitationToken !== result.data.invitationToken) {
-                    reportError("Invalid room invitation");
-                    return;
-                }
-                if (room.members.size >= 2) {
-                    reportError("Room is full");
-                    return;
-                }
-                room.members.add(socket);
-                currentRoomId = result.data.roomId;
-                send(socket, { type: "room-joined", roomId: currentRoomId });
-                for (const member of room.members) {
-                    send(member, { type: "peer-ready" });
-                }
+            const peerId = pair.senderConnectionId === connection.connectionId
+                ? pair.receiverConnectionId : pair.senderConnectionId;
+            const peer = connections.getById(peerId);
+            if (!peer || peer.socket.readyState !== WebSocket.OPEN) {
+                endPair(connection.connectionId);
                 return;
             }
-
-            const room = currentRoomId ? rooms.get(currentRoomId) : undefined;
-            if (!room || !room.members.has(socket)) {
-                reportError("Join or create a room first");
-                return;
-            }
-            if (room.members.size !== 2) {
-                reportError("Your peer is not connected");
-                return;
-            }
-            for (const member of room.members) {
-                if (member === socket) continue;
-                send(member, { type: "peer-message", text: result.data.text });
-            }
+            // Never deliver to a peer whose session has already been revoked.
+            if (!(await sessionValidators.get(peerId)?.())) return;
+            // A disconnect or pairing change can occur during the session lookup.
+            if (socket.readyState !== WebSocket.OPEN || peer.socket.readyState !== WebSocket.OPEN
+                || pairs.getById(pair.pairId) !== pair) return;
+            send(peer.socket, { type: "peer-message", pairId: pair.pairId, text: result.data.text });
         }
-
         // Keep one message in flight so asynchronous session checks cannot race.
         // Overlapping messages are rejected in this prototype, not queued.
         let processingMessage = false;
@@ -276,7 +274,7 @@ export function registerSignalingGateway(
             processingMessage = true;
             try {
                 if (!(await ensureSession())) return;
-                processMessage(data, isBinary);
+                await processMessage(data, isBinary);
             } catch {
                 socket.close(1011, "Message processing failed");
             } finally {
@@ -300,15 +298,8 @@ export function registerSignalingGateway(
             clearInterval(sessionTimer);
             invitations.removeForSender(connection.connectionId);
             connections.remove(connection.connectionId);
-            if (!currentRoomId) return;
-            const room = rooms.get(currentRoomId);
-            if (!room) return;
-            room.members.delete(socket);
-            if (room.members.size === 0) {
-                rooms.delete(currentRoomId);
-            } else {
-                for (const member of room.members) send(member, { type: "peer-left" });
-            }
+            sessionValidators.delete(connection.connectionId);
+            endPair(connection.connectionId);
         });
 
         socket.on("error", (error) => { app.log.error(error); });

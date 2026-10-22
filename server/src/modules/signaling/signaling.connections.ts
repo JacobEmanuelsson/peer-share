@@ -22,6 +22,9 @@ export function createConnectionRegistry() {
             connectionIdsByUser.set(userId, ids);
             return connection;
         },
+        getById(connectionId: string): AuthenticatedConnection | undefined {
+            return connections.get(connectionId);
+        },
         getForUser(userId: string): AuthenticatedConnection[] {
             const result: AuthenticatedConnection[] = [];
             for (const id of connectionIdsByUser.get(userId) ?? []) {

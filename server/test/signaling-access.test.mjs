@@ -37,7 +37,7 @@ test('session lookup failure does not grant access', async () => {
   } finally { await app.close(); }
 });
 
-test('valid session upgrades and can create a room', { timeout: 5000 }, async () => {
+test('valid session upgrades and handles application messages', { timeout: 5000 }, async () => {
   let cookie;
   const app = buildApp(sessionAuth(async ({ headers }) => {
     cookie = headers.get('cookie');
@@ -52,9 +52,9 @@ test('valid session upgrades and can create a room', { timeout: 5000 }, async ()
     await once(socket, 'open');
     assert.equal(cookie, 'test-session-cookie=example');
     const reply = once(socket, 'message');
-    socket.send(JSON.stringify({ type: 'create-room' }));
+    socket.send(JSON.stringify({ type: 'peer-message', pairId: '00000000-0000-4000-8000-000000000000', text: 'test' }));
     const [data] = await reply;
-    assert.equal(JSON.parse(data.toString()).type, 'room-created');
+    assert.equal(JSON.parse(data.toString()).type, 'error');
   } finally {
     if (socket?.readyState === WebSocket.OPEN) {
       const closed = once(socket, 'close'); socket.close(); await closed;
@@ -80,8 +80,8 @@ for (const mode of ['message', 'idle', 'lookup-failure']) {
       socket = new WebSocket(address.replace('http:', 'ws:') + '/api/signaling', { headers: { origin } });
       await once(socket, 'open');
       const created = once(socket, 'message');
-      socket.send(JSON.stringify({ type: 'create-room' }));
-      assert.equal(JSON.parse((await created)[0].toString()).type, 'room-created');
+      socket.send(JSON.stringify({ type: 'peer-message', pairId: '00000000-0000-4000-8000-000000000000', text: 'test' }));
+      assert.equal(JSON.parse((await created)[0].toString()).type, 'error');
       revoked = true;
       const closed = once(socket, 'close');
       const subsequentMessages = [];
@@ -108,7 +108,7 @@ test('an open connection cannot change its authenticated account', { timeout: 50
     await once(socket, 'open');
     userId = 'bob';
     const closed = once(socket, 'close');
-    socket.send(JSON.stringify({ type: 'create-room' }));
+    socket.send(JSON.stringify({ type: 'peer-message', pairId: '00000000-0000-4000-8000-000000000000', text: 'test' }));
     assert.equal((await closed)[0], 1008);
   } finally { socket?.terminate(); await app.close(); }
 });
