@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 
 export type AccountMailer = (to: string, subject: string, url: string) => Promise<void>;
 export function createAccountMailer(env: NodeJS.ProcessEnv): AccountMailer {
+  if (env.ACCOUNT_EMAIL_ENABLED === 'false') return async () => { throw new Error('Account email is not configured'); };
   if (env.NODE_ENV === 'production' && (!env.SMTP_HOST || !env.MAIL_FROM)) throw new Error('Configure SMTP_HOST and MAIL_FROM for account email');
   const host = env.SMTP_HOST ?? '127.0.0.1', port = Number(env.SMTP_PORT ?? 1025);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid SMTP_PORT');

@@ -42,3 +42,18 @@ test('unverified and missing verification flags cannot access private profile', 
     assert.equal((await app.inject({url:'/api/me'})).statusCode,401);
   }
 });
+test('site-only preview reports unavailable email without creating unverified accounts', async t => {
+  const previous = process.env.ACCOUNT_EMAIL_ENABLED;
+  process.env.ACCOUNT_EMAIL_ENABLED = 'false';
+  t.after(() => { if (previous === undefined) delete process.env.ACCOUNT_EMAIL_ENABLED; else process.env.ACCOUNT_EMAIL_ENABLED = previous; });
+  let called = false;
+  const app = Fastify(); t.after(() => app.close());
+  registerAuthRoutes(app, { handler: async () => { called = true; return new Response('{}'); } }, 'https://preview.example');
+  for (const path of ['sign-up/email', 'request-password-reset', 'send-verification-email', '%73ign-up/email']) {
+    const response = await app.inject({ method: 'POST', url: '/api/auth/' + path, payload: {} });
+    assert.equal(response.statusCode, 503);
+    assert.match(response.json().error, /email is not configured/);
+    assert.equal(response.headers['cache-control'], 'no-store');
+  }
+  assert.equal(called, false);
+});

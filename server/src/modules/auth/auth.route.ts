@@ -24,6 +24,9 @@ export function registerAuthRoutes(parent: FastifyInstance, auth: Auth, baseURL:
         keyGenerator: request => request.ip + ':' + authBucket(request.url),
       } },
       async handler(request, reply) {
+        if (process.env.ACCOUNT_EMAIL_ENABLED === 'false' && ['signup', 'reset', 'verify'].includes(authBucket(request.url))) {
+          return reply.code(503).header('Cache-Control', 'no-store').send({ error: 'Account email is not configured yet. Signup and password recovery are temporarily unavailable.' });
+        }
         const response = await auth.handler(new Request(new URL(request.url, baseURL), {
           method: request.method,
           headers: fromNodeHeaders(request.headers),
