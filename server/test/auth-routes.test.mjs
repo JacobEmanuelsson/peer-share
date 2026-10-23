@@ -52,7 +52,8 @@ test('site-only preview reports unavailable email without creating unverified ac
   for (const path of ['sign-up/email', 'request-password-reset', 'send-verification-email', '%73ign-up/email']) {
     const response = await app.inject({ method: 'POST', url: '/api/auth/' + path, payload: {} });
     assert.equal(response.statusCode, 503);
-    assert.match(response.json().error, /email is not configured/);
+    assert.match(response.json().message, /email is not configured/);
+    assert.equal(response.json().code, 'ACCOUNT_EMAIL_UNAVAILABLE');
     assert.equal(response.headers['cache-control'], 'no-store');
   }
   assert.equal(called, false);
