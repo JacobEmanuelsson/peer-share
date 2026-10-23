@@ -64,3 +64,12 @@ not exposed by the public preview.
 
 The preview is temporary and depends on this computer remaining awake with the
 backend, preview and tunnel running. See RELEASE-CHECKLIST.md for setup/cleanup.
+
+## Cloud deployment — 2026-10-23
+
+Live: https://peer-share-jacob.onrender.com/ . Owner confirmed iPhone mobile-data
+access. Render Free and Atlas M0 were provisioned. Public landing interaction,
+protected redirects, API/private-file rejection, WSS origin/session enforcement
+and explicit deferred-email errors passed in Chrome with no page errors.
+Email is intentionally deferred (ACCOUNT_EMAIL_ENABLED=false); authenticated
+cloud and cross-network transfer validation remains pending. See DEPLOYMENT.md.

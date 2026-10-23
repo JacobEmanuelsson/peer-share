@@ -110,24 +110,26 @@ The TURN signing secret is generated in the ignored server/.env, never in Git.
 The browser tests use the real local inbox for verification and delete their own
 test accounts/emails afterward. Mailpit must be running.
 
-## Temporary Safari preview
+## Public Safari test site
 
-https://importance-bandwidth-either-copyright.trycloudflare.com
+https://peer-share-jacob.onrender.com/
 
-This is an account-free, temporary HTTPS tunnel to the production-build preview
-on port 4173. It depends on this computer and the tunnel/preview/backend processes.
-It is not permanent hosting and carries no uptime guarantee.
+The app is deployed on Render Free with an Atlas M0 database. It no longer
+requires this computer or a temporary tunnel to run. Free hosting sleeps after
+15 minutes of inactivity and may take about a minute to wake up.
 
-Email is captured on this Windows computer at http://localhost:8025. Open the
-verification link there, then sign in on the phone. A public URL does not make
-the loopback-only TURN server reachable from the phone. Different-network relay
-testing remains pending public TURN provisioning.
+The owner chose to finish email later. ACCOUNT_EMAIL_ENABLED=false blocks signup
+and recovery with an explicit unavailable response. Verification is still required
+for sharing. Do not bypass it to test the deployment. See DEPLOYMENT.md to enable
+SMTP and perform the remaining authenticated checks.
 
-PUBLIC_APP_URL in server/.env controls exact trusted preview origin and email
-links. Clear it when this temporary URL is retired; restart the backend so normal
-local email links point to localhost again. Do not use wildcard trusted origins.
-Latest results and fixes: RELEASE-VERIFICATION.md.
-The current preview uses Cloudflare's free public STUN endpoint for direct NAT
-discovery. Local coturn remains available for forced-relay testing on this machine.
-STUN is not a substitute for public TURN when both networks require a relay.
-Preview uses a replacement Cloudflare Quick Tunnel over HTTP/2. The localhost.run anonymous address rotated and expired. Windows checks passed for public signup, login, WebSockets and transfer; iPhone access still needs confirmation. The broader browser check stopped later on a friendship acceptance HTTP 415 response.
+Public TURN is still pending. The cloud backend uses public STUN for direct
+connectivity; the local coturn instance is not available to internet clients.
+Different-network file transfers may require a public TURN relay.
+
+Temporary trycloudflare.com and localhost.run links are retired. Local development
+continues on localhost:5173 and localhost:3000, with PUBLIC_APP_URL cleared.
+VERIFIED 2026-10-23: owner opened the hosted site on iPhone mobile data.
+Cloud Chrome checks passed for landing interaction, redirects, API/WSS access
+checks, private-file rejection and the deferred-email error. Authenticated cloud
+flows and actual cross-network file transfer remain pending.

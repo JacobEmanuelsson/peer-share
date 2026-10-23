@@ -423,10 +423,11 @@ production-ready. Actual Safari validation is pending owner device testing.
 No paid subscriptions have been created.
 
 See docs/RELEASE-CHECKLIST.md for architecture, commands, tested behavior,
-exact limits, free-only prerequisites and the temporary Safari preview.
+exact limits, free-only prerequisites and the public deployment status.
 
 ## Public hosting
 
-A free Render Blueprint and single-server frontend/API hosting are prepared.
+Live site: https://peer-share-jacob.onrender.com/ (Render Free + Atlas M0).
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Atlas, email, private environment
-settings, account setup and verification. Hosting is not provisioned yet.
+settings, account setup and verification. Email setup is deferred by the owner;
+signup/recovery return a clear unavailable message until SMTP is configured.

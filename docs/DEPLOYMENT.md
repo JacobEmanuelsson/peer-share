@@ -1,7 +1,18 @@
 # Free public deployment
 
-Prepared on 2026-10-23. Hosting has not been provisioned yet: the owner must
-complete provider sign-in and supply database/email credentials privately.
+Deployed on 2026-10-23: https://peer-share-jacob.onrender.com/
+
+Render service: srv-dbdn12l9fdbs73bmpi7g (Free, Frankfurt, one instance).
+Atlas project: 6adb6e234b209ef10ddf568f; cluster peer-share (M0, AWS Frankfurt).
+Only Render outbound CIDRs 74.220.51.0/24 and 74.220.59.0/24 are allowlisted.
+The application database user has readWrite only on peer_share.
+
+The owner chose to deploy the site first and finish email afterward.
+ACCOUNT_EMAIL_ENABLED=false explicitly blocks signup, verification-email sends
+and password recovery with HTTP 503; required email verification remains intact.
+To enable accounts, configure the SMTP variables below, set
+ACCOUNT_EMAIL_ENABLED=true, redeploy, and verify actual inbox delivery.
+No paid compute plan, database tier or email subscription was created.
 
 ## Architecture
 
@@ -149,5 +160,27 @@ Typecheck and production build passed. All 79 server tests and 21 client tests
 passed. The Chrome end-to-end check passed against the built single-server
 layout at localhost:3001: verified signup/login, WebSockets, cancel/retry with
 verified download, blocking, reconnect, password reset/change and account deletion.
-Dependency audit reported no vulnerabilities. Cloud deployment and iPhone/mobile
-data access remain unverified until provider setup is completed.
+Dependency audit reported no vulnerabilities. Cloud deployment is live; The owner confirmed the site opens on iPhone mobile data.
+
+### Live deployment verification (2026-10-23)
+
+Render deployment dep-dbdn2svavr4c73alhb00 is live at code commit 47bae38.
+The service plan was checked as free; Atlas is M0. The owner confirmed the HTTPS
+site opens on iPhone mobile data, resolving the temporary-tunnel access problem.
+Chrome against the actual public URL passed:
+
+- Landing assets and the interactive Connect / Accept / Send sample flow.
+- Direct navigation to protected /app and /settings redirects to /login.
+- /api/me and /api/ice reject signed-out requests.
+- Unknown APIs and private-file paths are not replaced with frontend HTML.
+- Signup displays the explicit pending-email message and creates no account.
+- The public WSS signaling endpoint rejects missing sessions and bad origins.
+- No browser page errors.
+
+Authenticated cloud signup/login, secure session-cookie inspection and actual
+cross-network WebRTC transfer remain pending email delivery setup and test
+accounts. Public TURN is still required for restrictive networks. The Windows
+local release test passed previously; it is not a cloud authenticated-flow test.
+
+The old tunnel was stopped and local PUBLIC_APP_URL cleared. The hosted app no
+longer depends on the Windows backend, MongoDB container or tunnel processes.
