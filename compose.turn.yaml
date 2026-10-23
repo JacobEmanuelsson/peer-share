@@ -1,0 +1,22 @@
+# LOCAL TESTING ONLY. Use a public host and production network restrictions for deployment.
+services:
+  turn:
+    image: coturn/coturn@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3
+    ports:
+      - "127.0.0.1:3478:3478"
+      - "127.0.0.1:3478:3478/udp"
+      - "127.0.0.1:49160-49200:49160-49200/udp"
+    command:
+      - --no-tls
+      - --fingerprint
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_SHARED_SECRET:?Set TURN_SHARED_SECRET in server/.env}
+      - --realm=peer-share-local
+      - --external-ip=127.0.0.1
+      - --min-port=49160
+      - --max-port=49200
+      - --allow-loopback-peers
+      - --no-multicast-peers
+      - --user-quota=12
+      - --total-quota=100
+      - --log-file=stdout

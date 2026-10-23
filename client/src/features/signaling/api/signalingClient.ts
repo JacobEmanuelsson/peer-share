@@ -1,7 +1,22 @@
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 import * as z from "zod";
 
-export type ClientMessage =
+export const rtcSignalSchema = z.discriminatedUnion("type", [
+    z.object({ type: z.literal("offer"), sdp: z.string().min(1).max(24000) }).strict(),
+    z.object({ type: z.literal("answer"), sdp: z.string().min(1).max(24000) }).strict(),
+    z.object({
+        type: z.literal("ice-candidate"),
+        candidate: z.object({
+            candidate: z.string().max(2048),
+            sdpMid: z.string().max(256).nullable().optional(),
+            sdpMLineIndex: z.number().int().min(0).max(65535).nullable().optional(),
+            usernameFragment: z.string().max(256).nullable().optional(),
+        }).strict(),
+    }).strict(),
+]);
+export type RtcSignal = z.infer<typeof rtcSignalSchema>;
+
+export type ClientMessage = | { type: "end-pair"; pairId: string } | { type: "webrtc-signal"; pairId: string; signal: RtcSignal }
     | {
         type: "create-invitation";
         recipientUserId: string;
@@ -81,6 +96,7 @@ export function connectSignaling(handlers: Handlers) {
   };
 }
 const serverMessageSchema = z.discriminatedUnion("type", [
+    z.object({ type: z.literal("webrtc-signal"), pairId: z.string().uuid(), signal: rtcSignalSchema }),
     z.object({
         type: z.literal("invitation-created"),
         invitationId: z.string().uuid(),
@@ -98,6 +114,7 @@ const serverMessageSchema = z.discriminatedUnion("type", [
         invitationId: z.string().uuid(),
         pairId: z.string().uuid(),
         role: z.enum(["sender", "receiver"]),
+        peer: z.object({ id: z.string().min(1).max(128), name: z.string().max(100) }),
     }),
     z.object({
         type: z.literal("invitation-accepted-elsewhere"),

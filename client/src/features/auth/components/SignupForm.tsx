@@ -1,75 +1,35 @@
-import { useState, type SubmitEvent } from "react";
-import { authClient } from "../api/authClient";
+import { useState, type SubmitEvent } from 'react';
+import { useNavigate } from 'react-router';
+import { authClient } from '../api/authClient';
 
 export default function SignupForm() {
-
-    const [success, setSuccess] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
-
-    async function handleSubmit(event:SubmitEvent<HTMLFormElement>) {
-
-        event.preventDefault();
-        setSuccess(false);
-        setError("");
-
-        const formData = new FormData(event.currentTarget);
-
-        const name = formData.get("name");
-        const email = formData.get("email");
-        const password = formData.get("password");
-
-        if (typeof name !== "string" ||
-            typeof email !== "string" ||
-            typeof password !== "string"
-        ) {
-            setError("Input must be a string");
-            return;
-        }
-
-        setLoading(true);
-
-        try {
-            const result = await authClient.signUp.email({name, email, password});
-
-            if (result.error) {
-                setError(result.error.message ?? "Could not create an acount.");
-                return;
-            }
-            setSuccess(true);
-        } catch (error) {
-            setError(error instanceof Error ? error.message : "Something went wrong");
-        } finally {
-            setLoading(false)
-        }
-
-
-    }
-
-    return (
-        <form onSubmit={handleSubmit}>
-            <label htmlFor="email">
-                Email
-            </label>
-            <input type="email" name="email" id="email" placeholder="Example@email.com" autoComplete="email" required />
-
-            <label htmlFor="name">
-                Name
-            </label>
-            <input type="text" name="name" id="name" placeholder="Name" autoComplete="name" required/>
-
-            <label htmlFor="password">
-                Password
-            </label>
-            <input type="password" name="password" id="password" placeholder="Password" autoComplete="new-password" minLength={8} required/>
-
-            <button type="submit" disabled={loading}>
-                {loading ? "Creating account..." : "Create account"}
-            </button>
-
-            {error && <p role="alert">{error}</p>}
-            {success && <output aria-live="polite">Your account was created.</output>}
-
-        </form>
-    )
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (loading) return;
+    setError('');
+    const data = new FormData(event.currentTarget);
+    const name = data.get('name'), email = data.get('email'), password = data.get('password');
+    if (typeof name !== 'string' || typeof email !== 'string' || typeof password !== 'string') return;
+    if (!name.trim()) { setError('Enter your name.'); return; }
+    setLoading(true);
+    try {
+      const result = await authClient.signUp.email({ name: name.trim(), email: email.trim(), password, callbackURL: "/login?verified=1" });
+      if (result.error) { setError(result.error.message ?? 'Could not create your account.'); return; }
+      navigate('/verify-email?email=' + encodeURIComponent(email.trim()), { replace: true });
+    } catch { setError('Could not reach the server. Please try again.'); }
+    finally { setLoading(false); }
+  }
+  return (
+    <form className="auth-form" onSubmit={handleSubmit} aria-busy={loading}>
+      <label htmlFor="name">Name<input type="text" name="name" id="name" autoComplete="name" placeholder="Your name" required maxLength={100} disabled={loading} /></label>
+      <label htmlFor="email">Email<input type="email" name="email" id="email" autoComplete="email" placeholder="you@example.com" required disabled={loading} /></label>
+      <label htmlFor="password">Password<input type="password" name="password" id="password" autoComplete="new-password" placeholder="At least 8 characters" minLength={8} maxLength={128} required disabled={loading} aria-describedby="password-hint" /></label>
+      <p id="password-hint" className="form-note">Use 8–128 characters. Your password is also validated by the server.</p>
+      {error ? <p role="alert" className="error-message">{error}</p> : null}
+      <button className="button" type="submit" disabled={loading}>{loading ? 'Creating account…' : 'Create account'} <span aria-hidden="true">↗</span></button>
+    </form>
+  );
 }

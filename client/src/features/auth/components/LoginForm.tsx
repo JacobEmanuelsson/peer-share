@@ -1,66 +1,39 @@
-import { useState, type SubmitEvent } from "react";
-import { authClient } from "../api/authClient";
+import { useState, type SubmitEvent } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router';
+import { authClient } from '../api/authClient';
 
 export default function LoginForm() {
-
-    const [loading, setLoading] = useState(false);
-    const [success, setSuccess] = useState(false);
-    const [error, setError] = useState("");
-
-    async function handleSubmit(event:SubmitEvent<HTMLFormElement>) {
-        
-        event.preventDefault();
-        setError("");
-        setLoading(false);
-        setSuccess(false);
-
-        const formData = new FormData(event.currentTarget);
-
-        const password = formData.get("password");
-        const email = formData.get("email");
-
-        if (typeof password !== "string" || typeof email !== "string") {
-            setError("Input must be a string");
-            return;
-        }
-        try {
-            setLoading(true);
-
-            const result = await authClient.signIn.email({email, password});
-
-            if(result.error) {
-                setError(result.error.message ?? "Login failed");
-                return;
-            }
-            
-            setSuccess(true);
-        }catch (error) {
-            setError(error instanceof Error ? error.message : "Something went wrong");
-        } finally {
-            setLoading(false);
-        }
-
-    }
-
-
-    return (
-        <form onSubmit={handleSubmit}>
-            <label htmlFor="email">
-                Email
-            </label>
-            <input type="email" name="email" id="email" autoComplete="email" placeholder="Example@email.com" required/>
-
-            <label htmlFor="password">
-                Password
-            </label>
-            <input type="password" name="password" id="password" autoComplete="current-password" placeholder="Password" required/>
-
-            <button type="submit" disabled={loading}>
-                {loading ? "Logging in..." : "Login"}
-            </button>
-
-            {error && <p role="alert">{error}</p>}
-            {success && <output aria-live="polite">You logged in</output>}
-        </form>
-    )
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (loading) return;
+    setError('');
+    const data = new FormData(event.currentTarget);
+    const email = data.get('email'), password = data.get('password');
+    if (typeof email !== 'string' || typeof password !== 'string') return;
+    setLoading(true);
+    try {
+      const result = await authClient.signIn.email({ email: email.trim(), password });
+      if (result.error) { setError(result.error.message ?? 'Could not sign in.'); return; }
+      navigate('/app', { replace: true });
+    } catch { setError('Could not reach the server. Please try again.'); }
+    finally { setLoading(false); }
+  }
+  return (
+    <form className="auth-form" onSubmit={handleSubmit} aria-busy={loading}>
+      {params.has('verified') ? <p role="status">Email verified. You can sign in.</p> : null}
+      {params.has('reset') ? <p role="status">Password reset. Sign in with your new password.</p> : null}
+      {params.has('deleted') ? <p role="status">Your account has been deleted.</p> : null}
+      {params.has('local') ? <p role="alert">Local history could not be cleared. Clear this site's data in your browser settings.</p> : null}
+      <label htmlFor="email">Email<input type="email" name="email" id="email" autoComplete="email" placeholder="you@example.com" required disabled={loading} /></label>
+      <label htmlFor="password">Password<input type="password" name="password" id="password" autoComplete="current-password" placeholder="Your password" required disabled={loading} /></label>
+      {error ? <p role="alert" className="error-message">{error}</p> : null}
+      <button className="button" type="submit" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'} <span aria-hidden="true">↗</span></button>
+      <p><Link to="/forgot-password">Forgot password?</Link> · <Link to="/verify-email">Resend verification email</Link></p>
+      <p className="form-note">Your session stays protected with a secure account login.</p>
+    </form>
+  );
 }

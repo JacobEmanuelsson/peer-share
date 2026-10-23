@@ -1,3 +1,7 @@
+import { isAllowedOrigin } from '../auth/origins.js';
+import { createBudget } from './abuse.js';
+import type { SocialService } from '../social/social.service.js';
+import { createMessageQueue } from './signaling.queue.js';
 import { createPairStore } from './signaling.pairs.js';
 import { createInvitationStore } from './signaling.invitations.js';
 import { fromNodeHeaders } from 'better-auth/node';
@@ -7,7 +11,26 @@ import { createConnectionRegistry } from "./signaling.connections.js";
 import * as z from "zod";
 import WebSocket, { type RawData } from "ws";
 
+const rtcSignalSchema = z.discriminatedUnion("type", [
+    z.object({ type: z.literal("offer"), sdp: z.string().min(1).max(24000) }).strict(),
+    z.object({ type: z.literal("answer"), sdp: z.string().min(1).max(24000) }).strict(),
+    z.object({
+        type: z.literal("ice-candidate"),
+        candidate: z.object({
+            candidate: z.string().max(2048),
+            sdpMid: z.string().max(256).nullable().optional(),
+            sdpMLineIndex: z.number().int().min(0).max(65535).nullable().optional(),
+            usernameFragment: z.string().max(256).nullable().optional(),
+        }).strict(),
+    }).strict(),
+]);
 const messageCheck = z.discriminatedUnion("type", [
+    z.object({ type: z.literal("end-pair"), pairId: z.string().uuid() }).strict(),
+    z.object({
+        type: z.literal("webrtc-signal"),
+        pairId: z.string().uuid(),
+        signal: rtcSignalSchema,
+    }).strict(),
     z.object({
         type: z.literal("accept-invitation"),
         invitationId: z.string().uuid(),
@@ -27,16 +50,25 @@ export function registerSignalingGateway(
     app: FastifyInstance,
     auth: ReturnType<typeof createAuth>,
     allowedOrigin: string,
+    social?: SocialService,
 ) {
+    const messagesAllowed = createBudget(240, 60_000);
+    const invitationsAllowed = createBudget(10, 60_000);
     const pairs = createPairStore();
     const sessionValidators = new Map<string, () => Promise<boolean>>();
     const connections = createConnectionRegistry();
+    const stopAccess = social?.onUserAccessChanged(userIds => {
+      for (const userId of userIds) for (const connection of connections.getForUser(userId)) {
+        endPair(connection.connectionId); connection.socket.close(1008, 'Account access changed');
+      }
+    });
+    app.addHook('onClose', async () => { stopAccess?.(); });
     // One store for all connections, not one Map per incoming message.
     const invitations = createInvitationStore();
     const invitationCleanup = setInterval(() => invitations.removeExpired(), 30_000);
     invitationCleanup.unref();
     app.addHook("onClose", async () => { clearInterval(invitationCleanup); });
-    const verifiedIdentities = new WeakMap<FastifyRequest, { userId: string; sessionId: string }>();
+    const verifiedIdentities = new WeakMap<FastifyRequest, { userId: string; sessionId: string; name: string }>();
 
     function sendToConnection(connectionId: string, message: object) {
         const target = connections.getById(connectionId);
@@ -54,7 +86,7 @@ export function registerSignalingGateway(
         websocket: true,
         preValidation: async (request, reply) => {
             // Origin is a browser protection; session validation supplies identity.
-            if (request.headers.origin !== allowedOrigin) {
+            if (!isAllowedOrigin(request.headers.origin, allowedOrigin)) {
                 return reply.code(403).send({ error: "Origin is not allowed" });
             }
 
@@ -62,10 +94,10 @@ export function registerSignalingGateway(
                 headers: fromNodeHeaders(request.headers),
                 query: { disableCookieCache: true, disableRefresh: true },
             });
-            if (!session) {
+            if (!session || session.user.emailVerified !== true) {
                 return reply.code(401).send({ error: "You must be signed in" });
             }
-            verifiedIdentities.set(request, { userId: session.user.id, sessionId: session.session.id });
+            verifiedIdentities.set(request, { userId: session.user.id, sessionId: session.session.id, name: (session.user.name ?? session.user.id).slice(0, 100) });
         },
     }, (socket, request) => {
         const sessionHeader = fromNodeHeaders(request.headers);
@@ -75,7 +107,8 @@ export function registerSignalingGateway(
             socket.close(1008, "Authenticated identity missing");
             return;
         }
-        const connection = connections.add(identity.userId, identity.sessionId, socket);
+        if (connections.getForUser(identity.userId).length >= 5) { socket.close(1008, 'Too many open connections'); return; }
+        const connection = connections.add(identity.userId, identity.sessionId, socket, identity.name);
 
         function send(target: WebSocket, message: object) {
             if (target.readyState === WebSocket.OPEN) {
@@ -105,7 +138,7 @@ export function registerSignalingGateway(
                     return false;
                 }
 
-                if (!session || session.user.id !== connection.userId || session.session.id !== connection.sessionId) {
+                if (!session || session.user.emailVerified !== true || session.user.id !== connection.userId || session.session.id !== connection.sessionId) {
                     socket.close(1008, "Session expired or revoked");
                     endPair(connection.connectionId);
                     return false;
@@ -143,6 +176,8 @@ export function registerSignalingGateway(
             }
 
             if (result.data.type === "create-invitation") {
+                if (!invitationsAllowed(connection.userId)) { reportError("Too many invitations. Try again in a minute."); return; }
+                if (social && !(await social.canConnect(connection.userId, result.data.recipientUserId))) { reportError("Recipient is unavailable"); return; }
                 if (pairs.getForConnection(connection.connectionId)) {
                     reportError("This connection already has an active pair");
                     return;
@@ -183,6 +218,7 @@ export function registerSignalingGateway(
                     return;
                 }
 
+                if (social && !(await social.canConnect(connection.userId, invitation.senderUserId))) { reportError("Invitation is unavailable"); return; }
                 const sender = connections.getForUser(invitation.senderUserId)
                     .find(candidate => candidate.connectionId === invitation.senderConnectionId
                         && candidate.socket.readyState === WebSocket.OPEN);
@@ -226,12 +262,14 @@ export function registerSignalingGateway(
                     invitationId: invitation.id,
                     pairId: pair.pairId,
                     role: "receiver",
+                    peer: { id: sender.userId, name: sender.name },
                 });
                 send(sender.socket, {
                     type: "invitation-accepted",
                     invitationId: invitation.id,
                     pairId: pair.pairId,
                     role: "sender",
+                    peer: { id: connection.userId, name: connection.name },
                 });
                 for (const other of connections.getForUser(connection.userId)) {
                     if (other.connectionId === connection.connectionId
@@ -249,6 +287,13 @@ export function registerSignalingGateway(
                 reportError("You are not a participant in this active pair");
                 return;
             }
+            if (result.data.type === "end-pair") { endPair(connection.connectionId); return; }
+            if (result.data.type === "webrtc-signal"
+                && ((result.data.signal.type === "offer" && connection.connectionId !== pair.senderConnectionId)
+                    || (result.data.signal.type === "answer" && connection.connectionId !== pair.receiverConnectionId))) {
+                reportError("This connection cannot send that WebRTC description");
+                return;
+            }
             const peerId = pair.senderConnectionId === connection.connectionId
                 ? pair.receiverConnectionId : pair.senderConnectionId;
             const peer = connections.getById(peerId);
@@ -261,27 +306,36 @@ export function registerSignalingGateway(
             // A disconnect or pairing change can occur during the session lookup.
             if (socket.readyState !== WebSocket.OPEN || peer.socket.readyState !== WebSocket.OPEN
                 || pairs.getById(pair.pairId) !== pair) return;
-            send(peer.socket, { type: "peer-message", pairId: pair.pairId, text: result.data.text });
+            if (result.data.type === "webrtc-signal") {
+                send(peer.socket, { type: "webrtc-signal", pairId: pair.pairId, signal: result.data.signal });
+            } else {
+                send(peer.socket, { type: "peer-message", pairId: pair.pairId, text: result.data.text });
+            }
         }
-        // Keep one message in flight so asynchronous session checks cannot race.
-        // Overlapping messages are rejected in this prototype, not queued.
-        let processingMessage = false;
-        socket.on("message", async (data, isBinary) => {
-            if (processingMessage) {
-                reportError("Please wait for the previous message");
-                return;
-            }
-            processingMessage = true;
-            try {
-                if (!(await ensureSession())) return;
+        const messageQueue = createMessageQueue({
+            maxBytes: 256 * 1024,
+            process: async (data, isBinary) => {
+                if (!(await ensureSession())) {
+                    messageQueue.close();
+                    return;
+                }
                 await processMessage(data, isBinary);
-            } catch {
+                if (socket.readyState !== WebSocket.OPEN) messageQueue.close();
+            },
+            onOverflow: () => {
+                socket.close(1008, "Signaling queue limit exceeded");
+                endPair(connection.connectionId);
+            },
+            onError: (error) => {
+                app.log.error(error);
                 socket.close(1011, "Message processing failed");
-            } finally {
-                processingMessage = false;
-            }
+                endPair(connection.connectionId);
+            },
         });
-
+        socket.on("message", (data, isBinary) => {
+            if (!messagesAllowed(connection.userId)) { socket.close(1008, "Signaling rate limit exceeded"); return; }
+            messageQueue.enqueue(data, isBinary);
+        });
         let checkingIdleSession = false;
         const sessionTimer = setInterval(async () => {
             if (checkingIdleSession) return;
@@ -295,6 +349,7 @@ export function registerSignalingGateway(
         sessionTimer.unref();
 
         socket.on("close", () => {
+            messageQueue.close();
             clearInterval(sessionTimer);
             invitations.removeForSender(connection.connectionId);
             connections.remove(connection.connectionId);
@@ -302,6 +357,11 @@ export function registerSignalingGateway(
             endPair(connection.connectionId);
         });
 
-        socket.on("error", (error) => { app.log.error(error); });
+        socket.on("error", (error) => {
+            messageQueue.close();
+            app.log.error(error);
+            socket.close(1011, "Connection error");
+            endPair(connection.connectionId);
+        });
     });
 }

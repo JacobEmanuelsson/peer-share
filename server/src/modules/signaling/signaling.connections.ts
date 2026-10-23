@@ -4,6 +4,7 @@ import type WebSocket from "ws";
 export type AuthenticatedConnection = {
     readonly connectionId: string;
     readonly userId: string;
+    readonly name: string;
     readonly sessionId: string;
     readonly socket: WebSocket;
 };
@@ -14,8 +15,8 @@ export function createConnectionRegistry() {
     const connectionIdsByUser = new Map<string, Set<string>>();
 
     return {
-        add(userId: string, sessionId: string, socket: WebSocket): AuthenticatedConnection {
-            const connection = { connectionId: randomUUID(), userId, sessionId, socket };
+        add(userId: string, sessionId: string, socket: WebSocket, name = userId): AuthenticatedConnection {
+            const connection = { connectionId: randomUUID(), userId, sessionId, socket, name };
             connections.set(connection.connectionId, connection);
             const ids = connectionIdsByUser.get(userId) ?? new Set<string>();
             ids.add(connection.connectionId);

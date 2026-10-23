@@ -1,14 +1,10 @@
 import { Link } from 'react-router';
 import LoginForm from '../features/auth/components/LoginForm';
+import AuthLayout from '../features/auth/components/AuthLayout';
 
 export default function LoginPage() {
-  return (
-    <>
-      <h1 className="mb-6 text-3xl font-bold">Sign in</h1>
-      <LoginForm />
-      <p className="mt-6">
-        Need an account? <Link to="/sign-up" className="text-teal-300 underline">Sign up</Link>
-      </p>
-    </>
-  );
+  return <AuthLayout title="Welcome back." description="Sign in to your sharing workspace.">
+    <LoginForm />
+    <p className="auth-switch">New around here? <Link to="/sign-up">Create an account <span aria-hidden="true">↗</span></Link></p>
+  </AuthLayout>;
 }

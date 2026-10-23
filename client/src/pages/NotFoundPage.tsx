@@ -1,10 +1,4 @@
 import { Link } from 'react-router';
-
 export default function NotFoundPage() {
-  return (
-    <>
-      <h1 className="mb-4 text-3xl font-bold">Page not found</h1>
-      <Link to="/" className="text-teal-300 underline">Return home</Link>
-    </>
-  );
+  return <div className="empty-page"><p className="eyebrow">404 / A WRONG TURN</p><h1>Nothing to share here.</h1><p>This page doesn’t exist. Let’s get you back.</p><Link to="/" className="button">Return home ↗</Link></div>;
 }

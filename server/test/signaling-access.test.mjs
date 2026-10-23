@@ -41,7 +41,7 @@ test('valid session upgrades and handles application messages', { timeout: 5000 
   let cookie;
   const app = buildApp(sessionAuth(async ({ headers }) => {
     cookie = headers.get('cookie');
-    return { user: { id: 'test-user' }, session: { id: 'test-session' } };
+    return { user: { emailVerified: true, id: 'test-user' }, session: { id: 'test-session' } };
   }), origin);
   let socket;
   try {
@@ -72,7 +72,7 @@ for (const mode of ['message', 'idle', 'lookup-failure']) {
       assert.equal(query.disableCookieCache, true);
       assert.equal(query.disableRefresh, true);
       if (revoked && mode === 'lookup-failure') throw new Error('Database unavailable');
-      return revoked ? null : { user: { id: 'test-user' }, session: { id: 'test-session' } };
+      return revoked ? null : { user: { emailVerified: true, id: 'test-user' }, session: { id: 'test-session' } };
     }), origin);
     let socket;
     try {
@@ -100,7 +100,7 @@ for (const mode of ['message', 'idle', 'lookup-failure']) {
 
 test('an open connection cannot change its authenticated account', { timeout: 5000 }, async () => {
   let userId = 'alice';
-  const app = buildApp(sessionAuth(async () => ({ user: { id: userId }, session: { id: 'same-session' } })), origin);
+  const app = buildApp(sessionAuth(async () => ({ user: { emailVerified: true, id: userId }, session: { id: 'same-session' } })), origin);
   let socket;
   try {
     const address = await app.listen({ port: 0, host: '127.0.0.1' });

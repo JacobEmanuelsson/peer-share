@@ -1,3 +1,9 @@
+import { readRuntimeConfig } from './config/runtime.js';
+import { registerClient } from './http/client.js';
+import { registerIceRoutes } from './modules/auth/ice.js';
+import { createSocialRepository } from './modules/social/social.repository.js';
+import { createSocialService } from './modules/social/social.service.js';
+import { registerSocialRoutes } from './modules/social/social.routes.js';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.js';
@@ -16,16 +22,24 @@ function requiredEnv(name: string): string {
 async function start() {
   const uri = requiredEnv('DATABASE_URL');
   const secret = requiredEnv('BETTER_AUTH_SECRET');
-  const baseURL = requiredEnv('BETTER_AUTH_URL');
+  const config = readRuntimeConfig(process.env);
+  const baseURL = config.baseURL;
   const allowedOrigin = new URL(baseURL).origin;
   const { client, db } = await connectMongo(uri);
-  const auth = createAuth(db, secret, baseURL);
-  const app = buildApp(auth, allowedOrigin);
+
+  const socialRepo = createSocialRepository(db);
+  await socialRepo.init();
+  const social = createSocialService(socialRepo);
+  const auth = createAuth(db, secret, baseURL, { removeAccount: id => social.removeAccount(id) });
+  const app = buildApp(auth, allowedOrigin, social, { trustProxy: config.trustProxy });
+  registerIceRoutes(app, auth, process.env);
+  app.register(async instance => registerSocialRoutes(instance, auth, social, allowedOrigin));
   app.addHook('onClose', async () => { await client.close(); });
 
   try {
     registerAuthRoutes(app, auth, baseURL);
-    await app.listen({ port: 3000, host: '127.0.0.1' });
+    if (config.serveClient) registerClient(app, fileURLToPath(new URL('../../client/dist/', import.meta.url)));
+    await app.listen({ port: config.port, host: config.host });
   } catch (error) {
     await app.close();
     throw error;

@@ -42,7 +42,7 @@ test('sender disconnect cleanup preserves other senders', () => {
 test('gateway notifies only recipient connections and rejects forged sender fields', { timeout: 5000 }, async () => {
   const auth = { api: { getSession: async ({ headers }) => {
     const userId = headers.get('cookie');
-    return userId ? { user: { id: userId }, session: { id: userId + '-session' } } : null;
+    return userId ? { user: { emailVerified: true, id: userId }, session: { id: userId + '-session' } } : null;
   } } };
   const app = buildApp(auth, 'http://localhost:5173');
   const sockets = [];
@@ -151,7 +151,7 @@ for (const sameAccount of [false, true]) {
   test(`gateway accepts one recipient connection (same account: ${sameAccount})`, { timeout: 5000 }, async () => {
     const auth = { api: { getSession: async ({ headers }) => {
       const userId = headers.get('cookie');
-      return { user: { id: userId }, session: { id: userId + '-session' } };
+      return { user: { emailVerified: true, id: userId }, session: { id: userId + '-session' } };
     } } };
     const app = buildApp(auth, 'http://localhost:5173');
     const clients = [];
@@ -187,8 +187,8 @@ for (const sameAccount of [false, true]) {
       first.send({ type: 'accept-invitation', invitationId, userId: recipientId });
       assert.equal((await first.next()).text, 'Invalid message');
       first.send({ type: 'accept-invitation', invitationId });
-      assert.deepEqual(await first.next(), { type: 'invitation-accepted', invitationId, pairId: invitationId, role: 'receiver' });
-      assert.deepEqual(await sender.next(), { type: 'invitation-accepted', invitationId, pairId: invitationId, role: 'sender' });
+      assert.deepEqual(await first.next(), { type: 'invitation-accepted', invitationId, pairId: invitationId, role: 'receiver', peer: { id: 'alice', name: 'alice' } });
+      assert.deepEqual(await sender.next(), { type: 'invitation-accepted', invitationId, pairId: invitationId, role: 'sender', peer: { id: recipientId, name: recipientId } });
       assert.deepEqual(await second.next(), { type: 'invitation-accepted-elsewhere', invitationId });
       second.send({ type: 'accept-invitation', invitationId });
       assert.equal((await second.next()).type, 'error');

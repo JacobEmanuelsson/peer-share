@@ -238,3 +238,195 @@ These are server-relayed text messages, not WebRTC file transfer yet.
 Browser verification covered actual signup/session cookies, unavailable recipients,
 recipient tabs, acceptance, two-way messages, disconnect/re-pair, and sign-out
 cleanup. Temporary verification accounts were removed afterward.
+
+## Current milestone: WebRTC transfers
+
+Accepted invitation pairs now establish a browser WebRTC DataChannel. Text and
+file contents travel through that encrypted connection; the WebSocket exchanges
+only setup messages. Either participant selects a file (maximum 1 GiB), the receiving
+tab accepts it, and a download link appears after byte-count and SHA-256 checks.
+Both people can send simultaneously; each has separate sending/receiving progress.
+
+Start MongoDB, the backend, and the frontend as described above. Sign in in two
+tabs/accounts, invite the recipient account ID, and accept in the desired tab.
+Wait for WebRTC: connected, then select and send a file. Click Accept file on the
+receiver and download the verified result.
+
+This implementation streams received files to browser-managed temporary disk and defaults to local ICE
+candidates. Optional STUN configuration is in client/.env.example. Reliable use
+across different networks requires TURN and HTTPS/WSS before deployment.
+Earlier milestone notes above describe historical behavior; the current protocol,
+limits, file responsibilities, and checks are in server/src/modules/signaling/README.md.
+## Workspace UI and authentication navigation
+
+The current UI has responsive sign-in/sign-up pages, authenticated navigation,
+connection/invitation panels, a file picker with separate sending/receiving
+progress, verified downloads, and direct messages.
+
+client/src/features/auth/components/SessionBoundary.tsx owns route decisions:
+- /app is protected: a signed-out visitor is redirected to /login.
+- /login and /sign-up are guest pages: a signed-in visitor is redirected to /app.
+- Signup and login navigate to /app after success; signout replaces the route with /login.
+- Pending session checks show a loading state. Verification errors show a retry
+  screen instead of mounting the private workspace.
+- The session is checked again on window focus and every 30 seconds. Losing the
+  session unmounts the workspace and closes that tab's WebSocket/WebRTC connections.
+- Unknown routes show a public 404 page; they do not mount private content.
+
+These are navigation rules, not server authorization. Backend access remains:
+
+| Endpoint | Access |
+| --- | --- |
+| GET /api/health | Public liveness information only |
+| GET/POST /api/auth/* | Better Auth owns the individual endpoint rules; signup/login must remain reachable |
+| GET /api/me | Current server-verified session required; 401 otherwise; Cache-Control: no-store |
+| /api/signaling WebSocket | Exact configured browser Origin and current session required; pair membership and session revalidated before forwarding |
+
+The profile route disables the cookie session cache and session refresh for its
+lookup. Private future REST routes must add server-side session/authorization
+checks too; adding a frontend guard alone never secures an API.
+
+Presentation files: client/src/styles.css for shared colors/layout/responsive
+rules; App.tsx for the header/footer; AuthLayout.tsx for the common auth layout;
+ConnectionDemo.tsx for the workspace controls. WebRTC logic remains in client/src/webrtc.
+
+Verification included signed-out and signed-in direct navigation, signup/login
+redirects, incorrect passwords, logout and browser history, rejected forged and
+revoked cookies, session-loss cleanup, public health, desktop/mobile screenshots,
+no horizontal overflow at 390px, and simultaneous two-way file transfer. Test
+accounts and their auth records were removed.
+
+Additional private-endpoint checks:
+node --test server/test/auth-routes.test.mjs
+## Friends and sharing groups
+
+The workspace now includes saved friends and groups. Add someone using their
+account ID; they accept the friend request. Accepted friends have an Invite
+shortcut. Create a named group with up to five friends plus yourself, then have
+members join the same group. Select connected members, choose a file, and send
+to several people at once. Each recipient still explicitly accepts the file.
+All members can send, including simultaneously on separate peer connections.
+
+Friendships/group membership are stored in MongoDB; files remain peer-to-peer.
+TanStack Query manages the saved social data; WebRTC state stays local.
+Leaving a live session keeps the group saved. Leaving the saved group or deleting
+it immediately revokes the corresponding live access. The owner deletes the group;
+other members can leave. Only one device/tab per account may join that group.
+
+See server/src/modules/social/README.md for architecture, routes, limits,
+authorization, tests, and the distinction between saved membership and live mesh
+connections.
+## Local conversation history
+
+The note area is now a chat timeline for direct and group conversations. It shows
+sent/received messages, names, local dates/times, actual recipients, and file
+offers with completion/decline/interruption states. Friends have a Chat with…
+shortcut to view history even without a live peer. Group chat sends text to all
+connected members; file selection remains independent.
+
+As requested, history stays on this device/browser, scoped to the signed-in
+account and peer/group. The latest 200 entries persist through reloads. Temporary
+verified downloads appear in the timeline, but file bytes are not saved in the
+history database; download links cannot survive a reload. Clear history removes
+the local conversation log.
+
+Implementation and storage limits: client/src/features/chat/README.md.
+## Public landing page and current routes
+
+Visit / for the interactive public landing page. It keeps the dark green/lime
+design and includes a clearly labelled simulation: add/select sample people,
+connect, accept their invitations, then send a sample file. The preview never
+selects a real file or opens WebRTC/signaling connections.
+
+The existing authenticated workspace has moved to /app. Successful login/signup
+redirect there, and signed-in visitors to the auth forms are redirected there
+too. The landing page stays public even when signed in, with Open workspace
+navigation. The backend authorization rules remain unchanged.
+
+The setup/transfer explainer shows the server's signaling role versus the file
+DataChannel. Reduced-motion, keyboard and responsive layouts are supported.
+Source layout and verification: client/src/features/landing/README.md.
+Earlier milestone examples that use / as the workspace predate this route change.
+## Large files: 1 GiB
+
+The inclusive per-file limit is 1,073,741,824 bytes (1 GiB).
+The sender hashes the selected file in 1 MiB slices using hash-wasm SHA-256.
+The receiver hashes the incoming 16 KiB chunks and writes to OPFS (browser-managed
+temporary disk) with a 256 KiB write buffer. No entire-file arrayBuffer or
+in-memory chunk list is used. WebRTC encrypts the transport as before.
+
+Cumulative receiver acknowledgements cap unacknowledged payload at 256 KiB;
+the existing DataChannel and receive-queue bounds remain in place. UI byte
+progress is throttled to 100 ms. Size and SHA-256 must match before a verified
+download link and completion acknowledgement are published.
+
+Acceptance checks OPFS support and estimated free quota (file size + 32 MiB
+headroom). Estimates are advisory: a later disk write can still fail, which ends
+the transfer and removes its partial file. Unsupported browsers decline the
+offer with an explanation, rather than falling back to a 1 GiB memory buffer.
+Use HTTPS in production; localhost is suitable for development.
+
+Verified downloads are disk-backed File objects. A conversation retains at most
+10 download links / 2 GiB total. Clearing history, eviction, switching
+conversations and unmounting revoke the URLs and remove their temporary files.
+A crash can leave abandoned files; the next accepted transfer reclaims files
+older than 24 hours. Chat metadata still survives reload, but download links do
+not. Temporary files are local site storage, not separately encrypted at rest.
+A browser download may require another copy's worth of disk space.
+
+Both peers must keep their tabs open. Transfers cannot resume after refresh or
+disconnect. Groups send an independent copy to each selected recipient, so
+bandwidth and temporary disk usage multiply. These changes do not add TURN:
+connections across restrictive networks still need production ICE configuration.
+
+### Repeatable browser checks
+
+Start MongoDB, the backend and frontend using the normal development commands.
+Install the browser test engines with:
+
+    npx playwright install firefox webkit
+
+Run from the repository root (Chrome and Edge must already be installed):
+
+    node client/test/browser/large-transfer.mjs chrome
+    node client/test/browser/large-transfer.mjs edge
+    node client/test/browser/large-transfer.mjs firefox
+    node client/test/browser/disk-storage.mjs firefox
+    node client/test/browser/disk-storage.mjs webkit
+
+Chrome and Edge checks use isolated ordinary profiles because private contexts can impose lower quotas.
+The end-to-end check creates two isolated test accounts, rejects 1 GiB + 1 byte,
+transfers an exact 1 GiB sparse file over real WebRTC, streams the downloaded
+file through Node SHA-256, and deletes its own accounts/files in finally.
+The disk check independently writes, hashes, reads and disposes a full 1 GiB
+using the production storage modules. Run against stable source: Vite hot
+reloads during a transfer will interrupt it.
+
+These are local-machine tests, not internet/TURN, mobile or Safari certification.
+See client/test/browser/RESULTS.md for observed browser results.
+## Release features 1–5
+
+Email verification is now required before sharing. Signup redirects to
+/verify-email; verified users sign in to /app. Existing unverified accounts can
+request a link on /verify-email. Development mail is captured locally at
+http://localhost:8025; run docker compose up -d mailpit. It does not deliver
+messages to external inboxes.
+
+Account recovery, password changes/deletion, cancellation/retry, reconnect
+controls, user blocking, HTTP/WebSocket rate limits and authenticated TURN
+credential delivery are implemented. ICE configuration now lives on the backend,
+not in VITE_STUN_URL. No file content passes through the application backend.
+
+The local coturn configuration is test-only; public TURN credentials/hosting and
+real SMTP credentials are still required before internet delivery can be called
+production-ready. Actual Safari validation is pending owner device testing.
+No paid subscriptions have been created.
+
+See docs/RELEASE-CHECKLIST.md for architecture, commands, tested behavior,
+exact limits, free-only prerequisites and the temporary Safari preview.
+
+## Public hosting
+
+A free Render Blueprint and single-server frontend/API hosting are prepared.
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Atlas, email, private environment
+settings, account setup and verification. Hosting is not provisioned yet.

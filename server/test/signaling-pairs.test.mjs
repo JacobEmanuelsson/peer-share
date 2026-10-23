@@ -28,7 +28,7 @@ async function harness(t, resolveSession) {
   const app = buildApp({ api: { getSession: async args => {
     const user = args.headers.get('cookie');
     if (resolveSession) return resolveSession(user);
-    return revoked.has(user) ? null : { user: { id: user }, session: { id: user + '-session' } };
+    return revoked.has(user) ? null : { user: { emailVerified: true, id: user }, session: { id: user + '-session' } };
   } } }, 'http://localhost:5173');
   const address = await app.listen({ port: 0, host: '127.0.0.1' });
   const serverSockets = [];
@@ -195,7 +195,7 @@ test('disconnect during recipient session lookup cancels pending delivery', { ti
       lookupStarted();
       await new Promise(resolve => { releaseLookup = resolve; });
     }
-    return { user: { id: user }, session: { id: user + '-session' } };
+    return { user: { emailVerified: true, id: user }, session: { id: user + '-session' } };
   });
   const a = await connect('alice'), b = await connect('bob');
   const id = await invite(a, [b]);
@@ -221,4 +221,111 @@ test('sender disconnect ends pairing and cannot be replaced by its other tab', {
   assert.equal((await otherSender.next()).type, 'error');
   b.send({ type: 'peer-message', pairId, text: 'old sender' });
   assert.equal((await b.next()).type, 'error');
+});
+
+test('a burst of peer messages is delivered in order instead of rejected', { timeout: 10000 }, async t => {
+  const { connect } = await harness(t);
+  const a = await connect('alice'), b = await connect('bob');
+  const id = await invite(a, [b]);
+  const pairId = await accept(a, b, id);
+  for (let index = 0; index < 12; index++) a.send({ type: 'peer-message', pairId, text: `message-${index}` });
+  for (let index = 0; index < 12; index++) {
+    assert.deepEqual(await b.next(), { type: 'peer-message', pairId, text: `message-${index}` });
+  }
+  assert.deepEqual(a.queue, []);
+});
+
+for (const limit of ['count', 'bytes']) {
+test('queue ' + limit + ' overflow closes the overloaded connection and ends its pair', { timeout: 10000 }, async t => {
+  let blockAlice = false, releaseLookup;
+  const blocked = new Promise(resolve => { releaseLookup = resolve; });
+  const { connect } = await harness(t, async user => {
+    if (user === 'alice' && blockAlice) await blocked;
+    return { user: { emailVerified: true, id: user }, session: { id: user + '-session' } };
+  });
+  const a = await connect('alice'), b = await connect('bob');
+  const id = await invite(a, [b]);
+  const pairId = await accept(a, b, id);
+  blockAlice = true;
+  const closed = once(a.socket, 'close');
+  try {
+    for (let index = 0; index < (limit === 'count' ? 33 : 25); index++) a.socket.send(JSON.stringify({ type: 'peer-message', pairId, text: `message-${index}` }).padEnd(limit === 'count' ? 100 : 12000, ' '));
+    const [code, reason] = await closed;
+    assert.equal(code, 1008);
+    assert.equal(reason.toString(), 'Signaling queue limit exceeded');
+    assert.equal((await b.next()).type, 'pair-ended');
+  } finally { releaseLookup(); }
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(b.queue, []);
+});
+
+}
+
+test('disconnect discards messages waiting behind a session lookup', { timeout: 10000 }, async t => {
+  let blockAlice = false, releaseLookup, lookupStarted;
+  const blocked = new Promise(resolve => { releaseLookup = resolve; });
+  const started = new Promise(resolve => { lookupStarted = resolve; });
+  const { connect } = await harness(t, async user => {
+    if (user === 'alice' && blockAlice) { lookupStarted(); await blocked; }
+    return { user: { emailVerified: true, id: user }, session: { id: user + '-session' } };
+  });
+  const a = await connect('alice'), b = await connect('bob');
+  const id = await invite(a, [b]);
+  const pairId = await accept(a, b, id);
+  blockAlice = true;
+  try {
+    for (let index = 0; index < 3; index++) a.send({ type: 'peer-message', pairId, text: `discard-${index}` });
+    await started;
+    await a.close();
+    assert.equal((await b.next()).type, 'pair-ended');
+  } finally { releaseLookup(); }
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(b.queue, []);
+});
+
+test('WebRTC signaling is bound to the accepted pair and description roles', { timeout: 10000 }, async t => {
+  const { connect } = await harness(t);
+  const sender = await connect('alice'), receiver = await connect('bob'), extra = await connect('bob');
+  const id = await invite(sender, [receiver, extra]);
+  sender.send({ type: 'webrtc-signal', pairId: id, signal: { type: 'offer', sdp: 'before acceptance' } });
+  assert.equal((await sender.next()).type, 'error');
+  const pairId = await accept(sender, receiver, id, [extra]);
+  const offer = { type: 'webrtc-signal', pairId, signal: { type: 'offer', sdp: 'v=0\r\n' + 'a'.repeat(5000) } };
+  sender.send(offer);
+  assert.deepEqual(await receiver.next(), offer);
+  const answer = { type: 'webrtc-signal', pairId, signal: { type: 'answer', sdp: 'receiver-answer' } };
+  receiver.send(answer);
+  assert.deepEqual(await sender.next(), answer);
+  const ice = { type: 'webrtc-signal', pairId, signal: { type: 'ice-candidate', candidate: { candidate: 'candidate:1', sdpMid: '0', sdpMLineIndex: 0 } } };
+  for (const [source, target] of [[sender, receiver], [receiver, sender]]) {
+    source.send(ice); assert.deepEqual(await target.next(), ice);
+  }
+  for (const [source, payload] of [
+    [extra, offer],
+    [receiver, offer],
+    [sender, answer],
+    [sender, { ...offer, pairId: emptyId }],
+    [sender, { ...offer, receiverConnectionId: 'forged' }],
+    [sender, { ...offer, signal: { type: 'offer', sdp: 'a'.repeat(24001) } }],
+    [sender, { ...ice, signal: { type: 'ice-candidate', candidate: { candidate: 'a'.repeat(2049) } } }],
+    [sender, { type: 'file-offer', pairId, name: 'file-contents-do-not-belong-here' }],
+  ]) {
+    source.send(payload); assert.equal((await source.next()).type, 'error');
+  }
+  assert.deepEqual(extra.queue, []);
+  assert.deepEqual(receiver.queue, []);
+  assert.deepEqual(sender.queue, []);
+});
+
+test('WebRTC setup still rejects a revoked receiving session', { timeout: 10000 }, async t => {
+  const { connect, revoked } = await harness(t);
+  const sender = await connect('alice'), receiver = await connect('bob');
+  const id = await invite(sender, [receiver]);
+  const pairId = await accept(sender, receiver, id);
+  revoked.add('bob');
+  const closed = once(receiver.socket, 'close');
+  sender.send({ type: 'webrtc-signal', pairId, signal: { type: 'offer', sdp: 'secret-description' } });
+  await closed;
+  assert.equal((await sender.next()).type, 'pair-ended');
+  assert.deepEqual(receiver.queue, []);
 });
