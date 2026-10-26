@@ -418,7 +418,7 @@ credential delivery are implemented. ICE configuration now lives on the backend,
 not in VITE_STUN_URL. No file content passes through the application backend.
 
 The local coturn configuration is test-only. The public deployment now has
-a configured free TURN fallback with a 500 MB monthly relay allowance. Actual Safari validation is pending owner device testing.
+a configured free TURN fallback with a 500 MB monthly relay allowance. Owner confirmed small-file transfers both ways between computer and phone over mobile data, with TURN on both devices. Large-file/mobile recovery checks remain separate.
 No paid subscriptions have been created.
 
 See docs/RELEASE-CHECKLIST.md for architecture, commands, tested behavior,

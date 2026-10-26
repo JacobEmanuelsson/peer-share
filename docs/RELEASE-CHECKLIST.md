@@ -15,8 +15,8 @@ real-device verification remain explicit prerequisites, not assumed successes.
 - VERIFIED: a Chrome connection forced to relay selects actual relay candidates
   on both peers and transfers a verified file after cancellation/retry.
 - VERIFIED 2026-10-26: public Metered relay and TLS-only connectivity in desktop
-  browser tests; 500 MB free monthly allowance. Actual phone/mobile-data file
-  transfer is still pending the owner-assisted check.
+  browser tests; 500 MB free monthly allowance. Owner also confirmed small files
+  in both directions over phone mobile data, with TURN on both devices.
 - The local compose configuration intentionally permits loopback for tests.
   Never deploy it unchanged on a public host.
 - Free-only requirement: do not enable a plan with automatic paid overages.
@@ -137,3 +137,8 @@ flows and actual cross-network file transfer remain pending.
 See DEPLOYMENT.md for the 2026-10-26 checks and CROSS-NETWORK-TEST.md for
 the remaining real-device test. Expanded tests cover both file directions and
 three-person group transfer/reconnect; a stale-recipient reconnect race was fixed.
+
+OWNER VERIFIED 2026-10-26: computer-to-phone and phone-to-computer file
+transfer/download worked over mobile data, with TURN shown on both devices.
+Exact browser/device versions and file sizes were not recorded; physical-device
+cancel/retry, reconnect, groups and large files remain distinct checks.

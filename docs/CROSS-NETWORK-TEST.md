@@ -68,14 +68,17 @@ continues to issue standard one-hour TURN REST credentials per request.
 
 | Check | Device/browser versions | Route | Result/notes |
 | --- | --- | --- | --- |
-| Verified sign-in | | | |
-| Computer to phone | | | |
-| Phone to computer | | | |
-| Cancel and retry | | | |
-| Disconnect and reconnect | | | |
-| Three-person group | | | |
-| Forced public TURN | | | |
-| Larger file | | | |
+| Verified sign-in | Versions not recorded | N/A | PASS: owner confirmed workspace access, 2026-10-26. |
+| Computer to phone | Computer and phone; versions not recorded | TURN on both devices | PASS: owner confirmed file transfer/download worked over mobile data, 2026-10-26. |
+| Phone to computer | Computer and phone; versions not recorded | TURN on both devices | PASS: owner confirmed reverse transfer/download worked, 2026-10-26. |
+| Cancel and retry | Physical devices not yet checked | | Automated desktop check passed; physical-device check pending. |
+| Disconnect and reconnect | Physical devices not yet checked | | Automated desktop check passed; physical-device check pending. |
+| Three-person group | Desktop browser sessions | Local and public TURN | Automated check passed; phone-in-group check pending. |
+| Public TURN selected | Computer and phone | TURN on both devices | PASS: owner reported TURN on each device under normal fallback configuration; relay-only was not forced on the deployed app. |
+| Larger file | Physical devices not yet checked | | Desktop 1 GiB baseline passed; no real-phone large-file claim. |
 
 Do not include passwords, session cookies, verification links, API keys or raw
 ICE/SDP network addresses in the result record.
+The physical-device report confirms small-file transfer in both directions,
+with phone Wi-Fi off/mobile data enabled as instructed. Exact file sizes and
+device/browser versions were not recorded. This is not a 1 GiB Safari test.

@@ -55,7 +55,7 @@ chunking/storage protocol; its new end-to-end checks used small files.
 | Chrome 155.0.8059.86, actual public Metered TURN forced | PASS: the expanded release flow, with actual relay candidates selected on both direct peers. Small files fit the confirmed 500 MB free allowance. |
 | Chrome, public TURN TLS-only | PASS: only turns: endpoints allowed, selected relay on both peers, bidirectional DataChannel messages. |
 | Chrome and Edge, widths 1280 and 390 | PASS: verification steps, resend, sign-in link, success/expired-link messages and no horizontal overflow. These use UI fixtures and do not certify email delivery. |
-| Real iPhone/mobile-data file transfer | PENDING: owner-assisted test. Hosted site access and verified workspace sign-in have been confirmed by the owner. |
+| Real phone/mobile-data file transfer | PASS, owner-reported 2026-10-26: small-file transfer/download worked computer to phone and phone to computer; both showed TURN. Exact browser/device versions and file sizes were not recorded. Phone large-file/group/recovery behavior is not certified by this result. |
 
 86 server tests, 23 client tests and the production build passed. The expanded
 group test found a stale-recipient signaling race during group reconnect. A

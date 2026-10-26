@@ -101,7 +101,15 @@ real browser regressions pass after the fix.
 
 The deployed verification pages passed desktop/mobile-width UI checks with
 fixture sessions; health is 200 and private APIs reject anonymous requests.
-Those UI fixtures are not evidence of hosted authenticated transfer. Actual
-phone/mobile-data file transfer and Safari large-file behavior still require the
-owner-assisted checks in CROSS-NETWORK-TEST.md. The app remains on direct-first
+Those UI fixtures are not evidence of hosted authenticated transfer. The owner subsequently confirmed small-file transfers in both directions over
+phone mobile data, with TURN shown on both devices. Safari large-file behavior
+and the other physical-device scenarios remain separate checks in
+CROSS-NETWORK-TEST.md. The app remains on direct-first
 ICE, with TURN as a fallback, not relay-only in normal operation.
+## Owner-reported real-device result — 2026-10-26
+
+Computer-to-phone and phone-to-computer file transfer/download both worked
+with the phone on mobile data. Both device interfaces reported TURN. The
+deployment remained direct-first; relay-only was not forced. Exact versions and
+file sizes were not captured. This confirms the basic hosted cross-network
+relay path, not large-file Safari support or every recovery/group scenario.

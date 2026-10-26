@@ -16,7 +16,7 @@ SMTP authentication succeeded. The owner received the setup test in spam/junk.
 Live signup is enabled, rejects invalid input with HTTP 400, and private APIs
 still require authentication. Actual hosted signup/verification/sign-in is
 confirmed by the owner. Inbox placement is not guaranteed; sender-domain
-setup remains a separate deliverability improvement. Public TURN is configured in the current release; real-phone file transfer remains pending.
+setup remains a separate deliverability improvement. Public TURN is configured in the current release; owner confirmed bidirectional real-phone transfer over mobile data with TURN on both devices.
 No paid compute plan, database tier or email subscription was created.
 ## Architecture
 
@@ -243,9 +243,11 @@ recently departed peer must not close a healthy sender. A per-room bounded
 record handles those IDs; unrelated IDs, cross-group routing and self-targeting
 remain rejected. This has a backend regression test and the real browser check.
 
-Actual phone/mobile-data file transfer remains a required owner-assisted check;
-a desktop test forced through public TURN does not certify Safari behavior.
-Follow CROSS-NETWORK-TEST.md and record device/browser versions and results.
+VERIFIED by owner on 2026-10-26: small files transferred in both directions
+between computer and phone over mobile data, with TURN shown on both devices.
+Device/browser versions and exact file sizes were not recorded. Physical-device
+cancellation, reconnect, groups and large-file behavior remain separate checks.
+See CROSS-NETWORK-TEST.md for the result record.
 Live rollout: dep-dbfiile7bikc73dmua40 at application commit 64af704.
 Hosted verification UI checks passed at widths 1280 and 390. Health returned
 200; anonymous /api/me and /api/ice returned 401. No credentials were committed.
