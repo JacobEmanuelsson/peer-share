@@ -61,3 +61,6 @@ chunking/storage protocol; its new end-to-end checks used small files.
 group test found a stale-recipient signaling race during group reconnect. A
 bounded per-room departed-ID record and regression test fixed it without
 accepting unknown recipients or cross-group signaling.
+## Owner-reported direct transfer — 2026-10-26
+
+The owner confirmed a successful 1 GiB file transfer after the UI showed a direct connection. Exact device/browser versions were not recorded. This is separate from the small-file TURN checks above and does not certify 1 GiB relay or Safari support.

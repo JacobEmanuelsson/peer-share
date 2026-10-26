@@ -183,3 +183,8 @@ progress { width: 100%; height: 6px; accent-color: var(--accent); margin-top: 10
 .verification-guide .button { width: 100%; text-align: center; margin-top: 8px; }
 .verification-success { border-left: 3px solid var(--accent); padding: 12px 15px; background: #23321e; border-radius: 5px; }
 .verification-success strong { font-size: 14px; color: var(--accent); }
+.demo-notice { margin: 20px 0 0; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.demo-notice summary { padding: 11px 14px; cursor: pointer; color: #c4d1c3; }
+.demo-notice[open] summary { border-bottom: 1px solid var(--line); }
+.demo-notice > div { padding: 0 14px; max-width: 90ch; }
+.demo-notice p { margin: 12px 0; }
