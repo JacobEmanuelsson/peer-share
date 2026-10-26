@@ -16,7 +16,7 @@ export function createAccountMailer(env: NodeJS.ProcessEnv): AccountMailer {
   return async (to, subject, url) => {
     if (pending >= 50) throw new Error('Account mail queue is busy');
     pending++;
-    try { await transport.sendMail({ from: env.MAIL_FROM ?? 'Peer Share <noreply@localhost>', to, subject, text: subject + '\n\n' + url + '\n\nIf you did not request this, ignore this email.' }); }
+    try { await transport.sendMail({ from: env.MAIL_FROM ?? 'Peer Share <noreply@localhost>', to, subject, text: subject + '\n\n' + (subject === 'Verify your Peer Share email' ? 'Open this link to verify your email, then sign in with the email and password you registered. If you open the link on your phone, return to your computer and sign in there; the original tab will not update automatically.\n\n' : 'Open the link below to continue.\n\n') + url + '\n\nIf you did not request this, ignore this email.' }); }
     finally { pending--; }
   };
 }

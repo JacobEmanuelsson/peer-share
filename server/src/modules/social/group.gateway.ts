@@ -24,6 +24,13 @@ type Member = { id: string; userId: string; name: string; socket: WebSocket; ver
 export function registerGroupGateway(app: FastifyInstance, auth: ReturnType<typeof createAuth>, service: SocialService, origin: string) {
   const allowed = createBudget(240, 60_000);
   const rooms = new Map<string, Map<string, Member>>();
+  const departed = new WeakMap<Map<string, Member>, Set<string>>();
+  function rememberDeparted(room: Map<string, Member>, id: string) {
+    const ids = departed.get(room) ?? new Set<string>();
+    ids.add(id);
+    while (ids.size > 256) ids.delete(ids.values().next().value!);
+    departed.set(room, ids);
+  }
   function roster(room: Map<string, Member>) {
     for (const member of room.values()) if (member.socket.readyState === WebSocket.OPEN) member.socket.send(JSON.stringify({
       type: 'roster', selfId: member.id,
@@ -37,7 +44,7 @@ export function registerGroupGateway(app: FastifyInstance, auth: ReturnType<type
     const room = rooms.get(groupId);
     if (!room) return;
     for (const [id, member] of room) if (!userId || member.userId === userId) {
-      room.delete(id); member.socket.close(1008, 'Group membership ended');
+      rememberDeparted(room, id); room.delete(id); member.socket.close(1008, 'Group membership ended');
     }
     if (room.size) roster(room); else if (rooms.get(groupId) === room) rooms.delete(groupId);
   });
@@ -80,6 +87,9 @@ export function registerGroupGateway(app: FastifyInstance, auth: ReturnType<type
         if (binary) { socket.close(1003, 'Text signaling only'); return; }
         const message = messageSchema.parse(JSON.parse(data.toString()));
         const target = room.get(message.to);
+        // Queued ICE/SDP for a just-departed peer is normal during reconnect.
+        // Unknown or cross-group IDs still follow the invalid-recipient path.
+        if (!target && departed.get(room)?.has(message.to)) return;
         if (!target || target === member) { socket.close(1008, 'Invalid recipient'); return; }
         if (!(await service.canConnect(identity.userId, target.userId))) { socket.close(1008, 'Connection unavailable'); return; }
         const initiator = id < target.id;
@@ -99,7 +109,7 @@ export function registerGroupGateway(app: FastifyInstance, auth: ReturnType<type
     }, 15_000);
     timer.unref();
     socket.on('close', () => {
-      queue.close(); clearInterval(timer); room.delete(id);
+      queue.close(); clearInterval(timer); rememberDeparted(room, id); room.delete(id);
       if (!room.size) { if (rooms.get(groupId) === room) rooms.delete(groupId); } else roster(room);
     });
     socket.on('error', () => { queue.close(); socket.close(1011, 'Connection error'); });

@@ -1,3 +1,4 @@
+import { selectedConnectionRoute, type ConnectionRoute } from './connectionRoute';
 import { loadIceConfiguration } from './iceConfiguration';
 import type { RtcSignal } from '../features/signaling/api/signalingClient';
 import { CHUNK_BYTES, createFileTransfer, TransferCancelled, type FileOffer, type TransferProgress, type ChatText, type ReceivedFile } from './fileTransfer';
@@ -7,6 +8,7 @@ type Options = {
   role: 'sender' | 'receiver';
   sendSignal: (signal: RtcSignal) => boolean;
   onStatus: (status: PeerStatus) => void;
+  onRoute?: (route: ConnectionRoute) => void;
   onError: (message: string) => void;
   onText: (message: ChatText) => void;
   onOffer: (offer: FileOffer | null) => void;
@@ -87,7 +89,13 @@ export function createPeerConnection(options: Options) {
       next.close(); fail('Unexpected DataChannel'); return;
     }
     channel = next; next.binaryType = 'arraybuffer'; next.bufferedAmountLowThreshold = 64 * 1024;
-    next.onopen = () => { if (!closed) { clearTimeout(setupTimer); options.onStatus('connected'); } };
+    next.onopen = () => {
+      if (closed) return;
+      clearTimeout(setupTimer); options.onStatus('connected');
+      void peer.getStats().then(reports => {
+        if (!closed) options.onRoute?.(selectedConnectionRoute(reports));
+      }).catch(() => { if (!closed) options.onRoute?.('unknown'); });
+    };
     next.onclose = () => close();
     next.onerror = () => fail('DataChannel failed');
     next.onmessage = event => {
@@ -152,7 +160,7 @@ export function createPeerConnection(options: Options) {
     },
     sendText(text: string, id: string = crypto.randomUUID()): ChatText | null {
       try { if (!text.trim() || text.length > 2000) return null; const message = { id, text }; sendControl({ type: 'text', ...message }); return message; }
-      catch { options.onError('The direct connection is not ready or is busy'); return null; }
+      catch { options.onError('The connection is not ready or is busy'); return null; }
     },
     async sendFile(file: File) {
       try { await transfer.sendFile(file); }

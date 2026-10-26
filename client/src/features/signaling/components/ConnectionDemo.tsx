@@ -1,3 +1,4 @@
+import { connectionRouteLabel, type ConnectionRoute } from '../../../webrtc/connectionRoute';
 import ChatTimeline from '../../chat/components/ChatTimeline';
 import { useChatHistory } from '../../chat/useChatHistory';
 import type { Person } from '../../chat/chatHistory';
@@ -35,6 +36,7 @@ export default function ConnectionDemo({ userId, userName, quickInvite, chatTarg
   const [pending, setPending] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const [rtcStatus, setRtcStatus] = useState<PeerStatus | 'idle'>('idle');
+  const [route, setRoute] = useState<ConnectionRoute>('unknown');
   const [fileOffer, setFileOffer] = useState<FileOffer | null>(null);
   const [progress, setProgress] = useState<Partial<Record<TransferProgress['direction'], TransferProgress>>>({});
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -48,6 +50,7 @@ export default function ConnectionDemo({ userId, userName, quickInvite, chatTarg
       peerRef.current?.close();
       peerRef.current = null;
       setRtcStatus('idle');
+      setRoute('unknown');
       setFileOffer(null);
       setProgress({});
       setSendingFile(false);
@@ -86,7 +89,7 @@ export default function ConnectionDemo({ userId, userName, quickInvite, chatTarg
             setPending(null);
             setOutgoing(null);
             setIncoming(previous => previous.filter(item => item.invitationId !== message.invitationId));
-            setNotice(`Paired as ${message.role}. Establishing the direct connection…`);
+            setNotice(`Paired as ${message.role}. Establishing the encrypted connection…`);
             try {
               const isCurrent = () => pairRef.current?.pairId === message.pairId;
               const peer = createPeerConnection({
@@ -99,9 +102,10 @@ export default function ConnectionDemo({ userId, userName, quickInvite, chatTarg
                     setFileOffer(null);
                     setProgress({});
                     setSendingFile(false);
-                    setNotice('Direct connection ended. Refresh both peers to pair again.');
+                    setNotice('Connection ended. Use Reconnect, then send a new invitation.');
                   }
                 },
+                onRoute: next => { if (isCurrent()) setRoute(next); },
                 onError: text => { if (isCurrent()) setError(text); },
                 onText: text => { if (isCurrent()) chatRef.current.addText(text, message.peer, 'receive'); },
                 onOffer: offer => {
@@ -222,8 +226,9 @@ export default function ConnectionDemo({ userId, userName, quickInvite, chatTarg
           setAttempt(value => value + 1);
         }}>Reconnect</button>
         <h2 id="connection-heading">Your connections <span className="count-badge">{pair ? '01' : '00'}</span></h2>
-        <p className={`connection-status ${ready ? 'is-ready' : ''}`} role="status"><span className="status-dot" />{ready ? 'Direct connection established' : status === 'connected' ? 'Ready to connect' : 'Signaling: ' + status}</p>
+        <p className={`connection-status ${ready ? 'is-ready' : ''}`} role="status"><span className="status-dot" />{ready ? 'Encrypted connection established' : status === 'connected' ? 'Ready to connect' : 'Signaling: ' + status}</p>
       </div>
+      {ready ? <p className="micro-copy" role="status">Connection route: {connectionRouteLabel(route)}</p> : null}
       <div className="workspace-grid">
         <aside className="connection-column">
           <section className="panel identity-panel">
@@ -265,11 +270,11 @@ export default function ConnectionDemo({ userId, userName, quickInvite, chatTarg
         </aside>
         <div className="transfer-column">
           <section className={`panel transfer-panel ${ready ? 'is-connected' : ''}`} aria-labelledby="file-heading">
-            <div className="panel-heading"><div><p className="eyebrow">DIRECT TO YOUR PERSON</p><h3 id="file-heading">A little less upload.<br />A lot more connection.</h3></div><span className="transport-badge">P2P</span></div>
+            <div className="panel-heading"><div><p className="eyebrow">DIRECT TO YOUR PERSON</p><h3 id="file-heading">A little less upload.<br />A lot more connection.</h3></div><span className="transport-badge">{ready && route === 'relay' ? 'TURN' : 'WebRTC'}</span></div>
             <div className="file-stage">
               <div className="file-symbol" aria-hidden="true"><span>↗</span></div>
               <h4>{ready ? 'Ready when you are.' : 'Your next transfer starts here.'}</h4>
-              <p>{ready ? 'Choose a file and send it directly to your connected peer.' : 'Invite someone or accept an invitation to start sharing.'}</p>
+              <p>{ready ? 'Choose a file and send it to your connected peer.' : 'Invite someone or accept an invitation to start sharing.'}</p>
               <form className="file-form" onSubmit={event => {
                 event.preventDefault();
                 if (!selectedFile || !peerRef.current || sendingFile || !ready) return;

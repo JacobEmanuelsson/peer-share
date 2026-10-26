@@ -1,3 +1,4 @@
+import { connectionRouteLabel, type ConnectionRoute } from '../../../webrtc/connectionRoute';
 import ChatTimeline from '../../chat/components/ChatTimeline';
 import { useChatHistory } from '../../chat/useChatHistory';
 import { useEffect, useRef, useState } from 'react';
@@ -7,7 +8,7 @@ import { socialRequest, socialSchema } from '../api/socialClient';
 import { MAX_FILE_BYTES, type FileOffer, type TransferProgress } from '../../../webrtc/fileTransfer';
 import type { PeerStatus } from '../../../webrtc/peerConnection';
 
-type PeerState = { status?: PeerStatus; offer?: FileOffer | null; send?: TransferProgress; receive?: TransferProgress; busy?: boolean };
+type PeerState = { status?: PeerStatus; route?: ConnectionRoute; offer?: FileOffer | null; send?: TransferProgress; receive?: TransferProgress; busy?: boolean };
 export default function GroupWorkspace({ groupId, userId, userName, onLeave }: { groupId: string; userId: string; userName: string; onLeave: () => void }) {
   const [attempt, setAttempt] = useState(0);
   const [peers, setPeers] = useState<GroupPeer[]>([]);
@@ -31,6 +32,7 @@ export default function GroupWorkspace({ groupId, userId, userName, onLeave }: {
         setStates(previous => Object.fromEntries(Object.entries(previous).filter(([id]) => next.some(peer => peer.id === id))));
         setSelected(previous => previous.filter(id => next.some(peer => peer.id === id)));
       },
+      onRoute: (id, route) => patch(id, { route }),
       onStatus: (id, status) => patch(id, { status, ...(status === 'closed' || status === 'failed' ? { offer: null, busy: false } : {}) }),
       onOffer: (id, offer) => {
         patch(id, { offer });
@@ -112,6 +114,7 @@ export default function GroupWorkspace({ groupId, userId, userName, onLeave }: {
       const state = states[peer.id] ?? {};
       return <section className="panel" key={peer.id} aria-label={'Group peer ' + peer.name}>
         <div className="panel-heading"><h3>{peer.name}</h3><p className="micro-copy" role="status">WebRTC: {state.status ?? 'connecting'}</p></div>
+        {state.status === 'connected' ? <p className="micro-copy">Connection route: {connectionRouteLabel(state.route ?? 'unknown')}</p> : null}
         <label className="member-choice"><input type="checkbox" aria-label={'Send to ' + peer.name} checked={selected.includes(peer.id)} disabled={state.status !== 'connected' || state.busy}
           onChange={event => setSelected(previous => event.target.checked ? [...previous, peer.id] : previous.filter(id => id !== peer.id))} /> Include in send</label>
         {state.offer ? <div className="file-offer"><p className="break-id">Incoming file: {state.offer.name} ({state.offer.size} bytes)</p><div className="button-row">

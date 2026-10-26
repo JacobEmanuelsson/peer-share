@@ -7,13 +7,17 @@ Atlas project: 6adb6e234b209ef10ddf568f; cluster peer-share (M0, AWS Frankfurt).
 Only Render outbound CIDRs 74.220.51.0/24 and 74.220.59.0/24 are allowlisted.
 The application database user has readWrite only on peer_share.
 
-The owner chose to deploy the site first and finish email afterward.
-ACCOUNT_EMAIL_ENABLED=false explicitly blocks signup, verification-email sends
-and password recovery with HTTP 503; required email verification remains intact.
-To enable accounts, configure the SMTP variables below, set
-ACCOUNT_EMAIL_ENABLED=true, redeploy, and verify actual inbox delivery.
-No paid compute plan, database tier or email subscription was created.
+Account email enabled on 2026-10-26 using Brevo SMTP with STARTTLS on port 2525.
+Credentials are stored in Render's private environment; no keys or sender/test
+addresses are committed to this repository. ACCOUNT_EMAIL_ENABLED=true.
+Deployment dep-dbfhrtm7bikc73dkb2hg is live on the same application code commit.
 
+SMTP authentication succeeded. The owner received the setup test in spam/junk.
+Live signup is enabled, rejects invalid input with HTTP 400, and private APIs
+still require authentication. Actual hosted signup/verification/sign-in is
+confirmed by the owner. Inbox placement is not guaranteed; sender-domain
+setup remains a separate deliverability improvement. Public TURN remains pending.
+No paid compute plan, database tier or email subscription was created.
 ## Architecture
 
 One Render Node web service serves the built React application, HTTP API and
@@ -184,3 +188,61 @@ local release test passed previously; it is not a cloud authenticated-flow test.
 
 The old tunnel was stopped and local PUBLIC_APP_URL cleared. The hosted app no
 longer depends on the Windows backend, MongoDB container or tunnel processes.
+## Hosted TURN configuration
+
+The backend optionally supports Metered/Open Relay through its existing private
+/api/ice endpoint. Set METERED_APP_NAME to the app label before .metered.live and
+METERED_TURN_API_KEY to a credential-scoped API key from TURN Server > Credentials
+> Get credential > Show API Key. Do not use a Realtime publishable key or the
+account-wide secret key. Do not set either value in VITE_ variables.
+
+Clear TURN_URLS and TURN_SHARED_SECRET when using this provider. The coturn
+configuration remains supported as the alternative. Invalid/mixed configuration
+fails startup. The provider API uses a fixed HTTPS host, no redirects and a
+five-second timeout. Responses are validated and cached for five minutes;
+concurrent requests share the provider call. Provider errors return sanitized
+HTTP 503, not leaked keys or a silent downgrade to STUN-only.
+
+A verified session is required before any provider request. Only the ICE server
+URLs and scoped TURN credentials reach the browser; the API key stays private.
+The configuration refresh timestamp is not the provider credential's expiry.
+Credential expiry/rotation is managed in the provider dashboard. Newly created
+credentials can take up to two minutes to propagate.
+
+Confirm the account's actual free allowance and keep paid upgrades/overages and
+payment methods disabled. One product advertises 20 GB/month; a separate free
+trial advertises 500 MB/month. The smaller allowance cannot support a full 1 GiB
+relayed file. No paid tier is authorized for this project.
+
+Use CROSS-NETWORK-TEST.md for the real-device and forced-relay checks. Local
+browser tests are not proof of a successful iPhone/mobile-data file transfer.
+## Release steps 1–4 update — 2026-10-26
+
+The owner confirmed hosted email verification and successful sign-in to the
+workspace. Verification pages and email now explain the three steps and the
+phone/computer distinction; the login page shows clear success or expired-link
+feedback. No public email-status lookup or authentication bypass was added.
+
+Metered public TURN was validated using a confirmed free account with 500 MB
+monthly allowance and no payment/paid-overage authorization. The private app/key
+are configured on Render for the current rollout, with ICE_RELAY_ONLY=false.
+The verified private /api/ice route provides TURN as a fallback to direct ICE.
+A full 1 GiB relayed file exceeds this allowance; small public-relay test files
+were used. The application's direct/file-storage limit remains 1 GiB.
+
+Local automated verification passed: 86 backend tests and 23 client tests,
+production build, desktop/mobile-width verification UI in Chrome and Edge,
+Chrome and Edge with local TURN forced, and Chrome with the real public TURN
+forced. The expanded flow checks verified downloads in both directions, three
+members receiving a group file, non-owner group chat, group reconnect,
+cancellation/retry, blocking, recovery and account cleanup. A separate public
+TLS-only probe selected relay candidates on both peers and exchanged messages.
+
+The expanded group check found and fixed a reconnect race: late signaling for a
+recently departed peer must not close a healthy sender. A per-room bounded
+record handles those IDs; unrelated IDs, cross-group routing and self-targeting
+remain rejected. This has a backend regression test and the real browser check.
+
+Actual phone/mobile-data file transfer remains a required owner-assisted check;
+a desktop test forced through public TURN does not certify Safari behavior.
+Follow CROSS-NETWORK-TEST.md and record device/browser versions and results.

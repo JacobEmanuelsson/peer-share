@@ -24,7 +24,11 @@ export default function LoginForm() {
   }
   return (
     <form className="auth-form" onSubmit={handleSubmit} aria-busy={loading}>
-      {params.has('verified') ? <p role="status">Email verified. You can sign in.</p> : null}
+      {params.has('error') ? <p role="alert">This verification link is invalid or expired. Use “Resend verification email” below to request a new link.</p> : null}
+      {params.get('verified') === '1' && !params.has('error') ? <div className="verification-success" role="status">
+        <strong>Email verified. You can sign in.</strong>
+        <p>Use your registered email and password below. If you opened this link on your phone, you can also sign in on your computer.</p>
+      </div> : null}
       {params.has('reset') ? <p role="status">Password reset. Sign in with your new password.</p> : null}
       {params.has('deleted') ? <p role="status">Your account has been deleted.</p> : null}
       {params.has('local') ? <p role="alert">Local history could not be cleared. Clear this site's data in your browser settings.</p> : null}

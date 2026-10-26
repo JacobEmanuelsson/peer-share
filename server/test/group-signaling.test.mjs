@@ -91,3 +91,19 @@ for (const bad of ['unknown-target','file-payload','binary','wrong-role']) {
     assert.ok([1003,1008].includes((await closed)[0]));
   });
 }
+test('a delayed signal to a departed group peer does not close the sender or reach a replacement', {timeout:5000}, async t=>{
+ const h=await setup(t);
+ const a=await h.connect('a');const originalA=await a.next();
+ const b=await h.connect('b');const firstRoster=await a.next();await b.next();
+ const previousB=firstRoster.peers[0].id;
+ const closed=once(b.ws,'close');b.ws.close();await closed;
+ assert.equal((await a.next()).peers.length,0);
+ const replacement=await h.connect('b');const nextRoster=await a.next();await replacement.next();
+ assert.notEqual(nextRoster.peers[0].id,previousB);
+ const signal={type:'ice-candidate',candidate:{candidate:'candidate:valid'}};
+ a.send({type:'signal',to:previousB,signal:{type:'ice-candidate',candidate:{candidate:'candidate:stale'}}});
+ a.send({type:'signal',to:nextRoster.peers[0].id,signal});
+ assert.deepEqual(await replacement.next(),{type:'signal',from:originalA.selfId,signal});
+ assert.equal(a.ws.readyState,WebSocket.OPEN);assert.equal(replacement.ws.readyState,WebSocket.OPEN);
+ assert.deepEqual(replacement.queue,[]);
+});

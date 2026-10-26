@@ -6,7 +6,7 @@ import {verifyTestAccount} from './verify-account.mjs';
 const require=createRequire(new URL('../../../server/package.json',import.meta.url));
 const {MongoClient}=require('mongodb');require('dotenv').config({path:new URL('../../../server/.env',import.meta.url).pathname.replace(/^\/([A-Za-z]:)/,'$1'),quiet:true});
 const base=process.env.TEST_BASE_URL??'http://localhost:5173', run=Date.now();
-const accounts=[0,1].map(i=>({email:`release-${run}-${i}@example.invalid`,name:'Release Test '+i,password:randomBytes(18).toString('base64url')}));
+const accounts=[0,1,2].map(i=>({email:`release-${run}-${i}@example.invalid`,name:'Release Test '+i,password:randomBytes(18).toString('base64url')}));
 const engine=process.env.TEST_BROWSER??'chrome';
 const browser=await (engine==='firefox'?firefox:chromium).launch(engine==='firefox'?{firefoxUserPrefs:{'media.peerconnection.ice.loopback':true,'media.peerconnection.ice.obfuscate_host_addresses':false}}:{channel:engine==='edge'?'msedge':'chrome'}), contexts=[],errors=[];
 console.log('Browser',engine,browser.version());
@@ -19,6 +19,8 @@ async function login(page,account){
 async function signup(account){
  const context=await browser.newContext();contexts.push(context);
  await context.addInitScript(() => {
+   const OriginalSocket=window.WebSocket;window.__socketClosures=[];
+   window.WebSocket=class extends OriginalSocket {constructor(...args){super(...args);this.addEventListener('close',event=>window.__socketClosures.push({kind:String(args[0]).includes('/groups/')?'group':'direct',code:event.code,reason:event.reason}));}};
    const Original=window.RTCPeerConnection;window.__peers=[];
    window.RTCPeerConnection=class extends Original {constructor(...args){super(...args);window.__peers.push(this);}};
  });
@@ -40,7 +42,7 @@ async function social(page,path,method='GET',data){
 async function pair(a,b){
  const id=(await (await b.request.get(base+'/api/me')).json()).user.id;
  await a.getByLabel('Recipient account ID').fill(id);await a.getByRole('button',{name:'Invite',exact:true}).click();await b.getByRole('button',{name:'Accept invitation',exact:true}).last().click();
- await a.getByText('Direct connection established',{exact:true}).waitFor();await b.getByText('Direct connection established',{exact:true}).waitFor();return id;
+ await a.getByText('Encrypted connection established',{exact:true}).waitFor();await b.getByText('Encrypted connection established',{exact:true}).waitFor();return id;
 }
 try{
  const a=await signup(accounts[0]),b=await signup(accounts[1]);
@@ -72,10 +74,40 @@ try{
  const downloading=b.waitForEvent('download');await link.click();const download=await downloading;const hash=createHash('sha256');for await(const chunk of await download.createReadStream())hash.update(chunk);
  assert.equal(hash.digest('hex'),createHash('sha256').update(payload).digest('hex'));
  console.log('PASS cancel in-flight file, clean receive, retry and verified download without reconnect');
+ const reverse=Buffer.from('Verified transfer from invited peer to invitation owner');
+ await b.getByLabel('File to send').setInputFiles({name:'reverse.txt',mimeType:'text/plain',buffer:reverse});
+ await b.getByRole('button',{name:'Send file',exact:true}).click();await a.getByRole('button',{name:'Accept file',exact:true}).click();
+ const reverseLink=a.getByRole('link',{name:'Download reverse.txt (verified)',exact:true});await reverseLink.waitFor();
+ const reversePending=a.waitForEvent('download');await reverseLink.click();const reverseDownload=await reversePending;const reverseHash=createHash('sha256');for await(const chunk of await reverseDownload.createReadStream())reverseHash.update(chunk);
+ assert.equal(reverseHash.digest('hex'),createHash('sha256').update(reverse).digest('hex'));
+ for(const page of [a,b])await page.getByText(/Connection route: (Direct|TURN relay)/).waitFor();
+ console.log('PASS invited participant sends a verified file back to the owner; route feedback is visible');
  await social(a,'/api/friends','POST',{recipientId:bId});const request=(await social(b,'/api/social')).friends[0];await social(b,'/api/friends/'+request.id+'/accept','POST');
- const group=await social(a,'/api/groups','POST',{name:'Release cleanup',memberIds:[bId]});
+ const c=await signup(accounts[2]),cId=(await(await c.request.get(base+'/api/me')).json()).user.id;
+ await social(a,'/api/friends','POST',{recipientId:cId});const thirdRequest=(await social(c,'/api/social')).friends.find(friend=>friend.peer.id===aId);await social(c,'/api/friends/'+thirdRequest.id+'/accept','POST');
+ const group=await social(a,'/api/groups','POST',{name:'Release cleanup',memberIds:[bId,cId]});
+ for(const page of [a,b,c])await page.getByRole('button',{name:'Join Release cleanup',exact:true}).click();
+ for(const [page,indexes]of [[a,[1,2]],[b,[0,2]],[c,[0,1]]])for(const index of indexes)await page.getByRole('checkbox',{name:'Send to '+accounts[index].name,exact:true}).check();
+ const groupPayload=Buffer.alloc(128*1024,43);
+ await a.getByLabel('Group file to send').setInputFiles({name:'group.bin',mimeType:'application/octet-stream',buffer:groupPayload});await a.getByRole('button',{name:'Send to selected (2)',exact:true}).click();
+ for(const page of [b,c])await page.getByRole('button',{name:'Accept file from '+accounts[0].name,exact:true}).click();
+ for(const page of [b,c]){
+  const link=page.getByRole('link',{name:'Download group.bin from '+accounts[0].name+' (verified)',exact:true});await link.waitFor();
+  const pending=page.waitForEvent('download');await link.click();const file=await pending,hash=createHash('sha256');for await(const chunk of await file.createReadStream())hash.update(chunk);
+  assert.equal(hash.digest('hex'),createHash('sha256').update(groupPayload).digest('hex'));
+ }
+ await b.getByLabel('Group message',{exact:true}).fill('Group message from a non-owner');await b.getByRole('button',{name:'Send group message',exact:true}).click();
+ for(const page of [a,c])await page.getByText('Group message from a non-owner',{exact:true}).waitFor();
+ for(const page of [a,b,c])await page.getByRole('button',{name:'Reconnect group',exact:true}).click();
+ for(const index of [1,2])await a.getByRole('checkbox',{name:'Send to '+accounts[index].name,exact:true}).check();
+ await a.getByLabel('Group message',{exact:true}).fill('Group reconnected without reload');await a.getByRole('button',{name:'Send group message',exact:true}).click();
+ for(const page of [b,c])await page.getByText('Group reconnected without reload',{exact:true}).waitFor();
+ console.log('PASS three-member mesh: verified file to two recipients, non-owner chat and group reconnect');
+ for(const page of [a,b,c])await page.getByRole('button',{name:'Leave session',exact:true}).click();
+ for(const page of [a,b])await page.getByText('Ready to connect',{exact:true}).waitFor();
+ await pair(a,b);
  await social(a,'/api/blocks','POST',{recipientId:bId});await a.getByText('Signaling: disconnected',{exact:true}).waitFor();await b.getByText('Signaling: disconnected',{exact:true}).waitFor();
- assert.equal((await social(a,'/api/social')).friends.length,0);
+ assert.equal((await social(a,'/api/social')).friends.some(friend=>friend.peer.id===bId),false);
  assert.equal((await b.request.post(base+'/api/friends',{headers:{origin:base},data:{recipientId:aId}})).status(),404);
  await social(a,'/api/blocks/'+bId,'DELETE');
  assert.equal((await social(a,'/api/social')).blocks.length,0);
@@ -97,6 +129,12 @@ try{
  assert.equal((await social(b,'/api/social')).groups.some(item=>item.id===group.id),false);
  console.log('PASS password change, password-confirmed account deletion and owned-group cleanup');
  assert.deepEqual(errors,[]);console.log('PASS no browser page errors');
+}catch(error){
+ for(let i=0;i<contexts.length;i++)for(const page of contexts[i].pages()){
+  console.log('Test browser '+i+' socket closures',await page.evaluate(()=>window.__socketClosures??[]).catch(()=>[]));
+  console.log('Test browser '+i+' visible errors',await page.getByRole('alert').allTextContents().catch(()=>[]));
+ }
+ throw error;
 }finally{
  await browser.close();for(const context of contexts)await context.close().catch(()=>{});
  const client=new MongoClient(process.env.DATABASE_URL);try{await client.connect();const db=client.db();const users=await db.collection('user').find({email:{$in:accounts.map(x=>x.email)}}).toArray(),ids=users.flatMap(u=>[u._id,u._id.toString()]);

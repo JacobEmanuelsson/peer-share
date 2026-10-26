@@ -43,3 +43,21 @@ Release steps 1–5 were subsequently implemented and the complete 1 GiB Chrome
 and Edge checks rerun with verified signup and authenticated backend ICE config.
 See ../../../docs/RELEASE-VERIFICATION.md for account, cancellation, blocking,
 public-origin and forced-relay evidence and remaining external prerequisites.
+## Release checks — 2026-10-26
+
+The 1 GiB results above are from 2026-10-23. This release did not change the
+chunking/storage protocol; its new end-to-end checks used small files.
+
+| Browser / setup | Result |
+| --- | --- |
+| Chrome 155.0.8059.86, local coturn forced | PASS: actual relay selection, bidirectional SHA-256 downloads, cancellation/retry, three-member group file to both recipients, non-owner group chat, group reconnect, auth/recovery/blocking/cleanup. |
+| Edge 156.0.4314.42, local coturn forced | PASS: the same expanded release flow. |
+| Chrome 155.0.8059.86, actual public Metered TURN forced | PASS: the expanded release flow, with actual relay candidates selected on both direct peers. Small files fit the confirmed 500 MB free allowance. |
+| Chrome, public TURN TLS-only | PASS: only turns: endpoints allowed, selected relay on both peers, bidirectional DataChannel messages. |
+| Chrome and Edge, widths 1280 and 390 | PASS: verification steps, resend, sign-in link, success/expired-link messages and no horizontal overflow. These use UI fixtures and do not certify email delivery. |
+| Real iPhone/mobile-data file transfer | PENDING: owner-assisted test. Hosted site access and verified workspace sign-in have been confirmed by the owner. |
+
+86 server tests, 23 client tests and the production build passed. The expanded
+group test found a stale-recipient signaling race during group reconnect. A
+bounded per-room departed-ID record and regression test fixed it without
+accepting unknown recipients or cross-group signaling.

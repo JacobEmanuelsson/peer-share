@@ -1,3 +1,4 @@
+import type { ConnectionRoute } from '../../../webrtc/connectionRoute';
 import * as z from 'zod';
 import { rtcSignalSchema } from '../../signaling/api/signalingClient';
 import { createPeerConnection, type PeerStatus } from '../../../webrtc/peerConnection';
@@ -12,6 +13,7 @@ const serverMessage = z.discriminatedUnion('type', [
 type Handlers = {
   onRoster: (peers: GroupPeer[]) => void;
   onStatus: (id: string, status: PeerStatus) => void;
+  onRoute: (id: string, route: ConnectionRoute) => void;
   onOffer: (id: string, offer: FileOffer | null) => void;
   onProgress: (id: string, progress: TransferProgress) => void;
   onFile: (id: string, file: ReceivedFile) => void;
@@ -42,6 +44,7 @@ export function connectGroup(groupId: string, handlers: Handlers) {
             socket.send(JSON.stringify({ type: 'signal', to: other.id, signal })); return true;
           },
           onStatus: status => { if (!disposed) handlers.onStatus(other.id, status); },
+          onRoute: route => { if (!disposed) handlers.onRoute(other.id, route); },
           onOffer: offer => { if (!disposed) handlers.onOffer(other.id, offer); },
           onProgress: progress => { if (!disposed) handlers.onProgress(other.id, progress); },
           onFile: file => { if (!disposed) handlers.onFile(other.id, file); else void file.dispose?.(); },

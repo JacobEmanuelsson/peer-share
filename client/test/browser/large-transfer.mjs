@@ -76,8 +76,8 @@ try {
   await a.getByLabel('Recipient account ID').fill(recipientId);
   await a.getByRole('button', { name: 'Invite', exact: true }).click();
   await b.getByRole('button', { name: 'Accept invitation', exact: true }).click();
-  await a.getByText('Direct connection established', { exact: true }).waitFor();
-  await b.getByText('Direct connection established', { exact: true }).waitFor();
+  await a.getByText('Encrypted connection established', { exact: true }).waitFor();
+  await b.getByText('Encrypted connection established', { exact: true }).waitFor();
 
   await a.getByLabel('File to send').setInputFiles(oversizedPath);
   await a.getByRole('button', { name: 'Send file', exact: true }).click();

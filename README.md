@@ -417,9 +417,8 @@ controls, user blocking, HTTP/WebSocket rate limits and authenticated TURN
 credential delivery are implemented. ICE configuration now lives on the backend,
 not in VITE_STUN_URL. No file content passes through the application backend.
 
-The local coturn configuration is test-only; public TURN credentials/hosting and
-real SMTP credentials are still required before internet delivery can be called
-production-ready. Actual Safari validation is pending owner device testing.
+The local coturn configuration is test-only; public TURN credentials/hosting are
+still required for reliable file transfers on restrictive networks. Actual Safari validation is pending owner device testing.
 No paid subscriptions have been created.
 
 See docs/RELEASE-CHECKLIST.md for architecture, commands, tested behavior,
@@ -429,5 +428,25 @@ exact limits, free-only prerequisites and the public deployment status.
 
 Live site: https://peer-share-jacob.onrender.com/ (Render Free + Atlas M0).
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Atlas, email, private environment
-settings, account setup and verification. Email setup is deferred by the owner;
-signup/recovery return a clear unavailable message until SMTP is configured.
+settings, account setup and verification. Brevo SMTP account email was enabled
+on 2026-10-26. The setup test reached the owner's junk folder; hosted account
+verification and workspace sign-in were confirmed by the owner.
+
+Public TURN support now loads provider ICE configuration through the verified
+backend session. The current free relay account has 500 MB/month; that quota is
+separate from the app's 1 GiB file limit. TURN is a fallback; direct transfers
+avoid relay bandwidth. See docs/CROSS-NETWORK-TEST.md for actual device testing.
+
+Verification feedback tests (UI fixtures only):
+
+    node client/test/browser/verification-feedback.mjs
+
+The expanded release-features.mjs check covers bidirectional verified downloads,
+three-person groups, reconnect and cancellation. FORCE_RELAY=1 forces the actual
+configured relay and asserts that selected candidates use it. Do not point its
+local Mailpit/test-account cleanup at the production database unchanged.
+
+For a tiny TLS-only public provider probe, set TURN_SETUP_PATH to the private
+provider settings file, TEST_BASE_URL to the running local test app, then run:
+
+    node client/test/browser/turn-tls.mjs

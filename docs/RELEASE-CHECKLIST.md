@@ -1,6 +1,6 @@
 # Release steps 1–5
 
-Status as of 2026-10-23. Application code is implemented; outside services and
+Status as of 2026-10-26. Application code is implemented; outside services and
 real-device verification remain explicit prerequisites, not assumed successes.
 
 ## 1. Cross-network connections
@@ -14,8 +14,9 @@ real-device verification remain explicit prerequisites, not assumed successes.
   Its listener/relay ports bind only to 127.0.0.1.
 - VERIFIED: a Chrome connection forced to relay selects actual relay candidates
   on both peers and transfers a verified file after cancellation/retry.
-- PENDING: a publicly reachable TURN service, provider account/host credentials,
-  TLS relay configuration and testing on different physical networks.
+- VERIFIED 2026-10-26: public Metered relay and TLS-only connectivity in desktop
+  browser tests; 500 MB free monthly allowance. Actual phone/mobile-data file
+  transfer is still pending the owner-assisted check.
 - The local compose configuration intentionally permits loopback for tests.
   Never deploy it unchanged on a public host.
 - Free-only requirement: do not enable a plan with automatic paid overages.
@@ -62,7 +63,7 @@ real-device verification remain explicit prerequisites, not assumed successes.
 - Mail uses SMTP through Nodemailer. Local development delivers to Mailpit only.
 - VERIFIED: browser signup/verify/login, reset email/token form, revoked old
   session, new password login, password change and account/group deletion.
-- PENDING: a real SMTP account and verified sender for delivery outside Mailpit.
+- CONFIGURED 2026-10-26: Brevo SMTP; setup test delivered to owner spam/junk.
   Production startup requires explicit SMTP_HOST and MAIL_FROM.
 
 ## 5. Abuse controls
@@ -118,14 +119,13 @@ The app is deployed on Render Free with an Atlas M0 database. It no longer
 requires this computer or a temporary tunnel to run. Free hosting sleeps after
 15 minutes of inactivity and may take about a minute to wake up.
 
-The owner chose to finish email later. ACCOUNT_EMAIL_ENABLED=false blocks signup
-and recovery with an explicit unavailable response. Verification is still required
-for sharing. Do not bypass it to test the deployment. See DEPLOYMENT.md to enable
-SMTP and perform the remaining authenticated checks.
+Brevo account email was enabled on 2026-10-26 (ACCOUNT_EMAIL_ENABLED=true).
+The SMTP test reached owner spam/junk. The hosted signup/verification/sign-in
+check was confirmed by the owner. Verification is still required for sharing.
 
-Public TURN is still pending. The cloud backend uses public STUN for direct
-connectivity; the local coturn instance is not available to internet clients.
-Different-network file transfers may require a public TURN relay.
+Public TURN is configured for the current release, with direct ICE preferred.
+The free allowance is 500 MB/month, which cannot cover a full 1 GiB relayed file.
+The local coturn instance remains for local testing only.
 
 Temporary trycloudflare.com and localhost.run links are retired. Local development
 continues on localhost:5173 and localhost:3000, with PUBLIC_APP_URL cleared.
@@ -133,3 +133,7 @@ VERIFIED 2026-10-23: owner opened the hosted site on iPhone mobile data.
 Cloud Chrome checks passed for landing interaction, redirects, API/WSS access
 checks, private-file rejection and the deferred-email error. Authenticated cloud
 flows and actual cross-network file transfer remain pending.
+
+See DEPLOYMENT.md for the 2026-10-26 checks and CROSS-NETWORK-TEST.md for
+the remaining real-device test. Expanded tests cover both file directions and
+three-person group transfer/reconnect; a stale-recipient reconnect race was fixed.

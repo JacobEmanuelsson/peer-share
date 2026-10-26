@@ -175,3 +175,11 @@ progress { width: 100%; height: 6px; accent-color: var(--accent); margin-top: 10
 .chat-composer textarea:disabled { opacity: .45; }
 .chat-composer .button { flex-shrink: 0; }
 @media (max-width: 760px) { .chat-composer { flex-direction: column; align-items: stretch; } .chat-entry { max-width: 96%; } .chat-meta { gap: 5px 12px; } }
+.verification-guide { border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 24px; }
+.verification-guide h3, .auth-section-title { font-size: 15px; margin: 0 0 12px; }
+.verification-guide ol { padding-left: 20px; font-size: 13px; line-height: 1.8; }
+.verification-guide li + li { margin-top: 8px; }
+.verification-guide p, .verification-success p { font-size: 12px; line-height: 1.7; color: var(--muted); }
+.verification-guide .button { width: 100%; text-align: center; margin-top: 8px; }
+.verification-success { border-left: 3px solid var(--accent); padding: 12px 15px; background: #23321e; border-radius: 5px; }
+.verification-success strong { font-size: 14px; color: var(--accent); }
