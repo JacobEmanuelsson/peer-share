@@ -73,3 +73,35 @@ protected redirects, API/private-file rejection, WSS origin/session enforcement
 and explicit deferred-email errors passed in Chrome with no page errors.
 Email is intentionally deferred (ACCOUNT_EMAIL_ENABLED=false); authenticated
 cloud and cross-network transfer validation remains pending. See DEPLOYMENT.md.
+
+## Hosted authentication and public TURN — 2026-10-26
+
+Owner confirmed actual hosted verification email and workspace sign-in. SMTP is
+enabled; initial mail arrived in junk. Verification guidance now explains
+opening the email, following its link and signing in on the chosen device.
+
+Public Metered TURN is configured privately in Render. The account's confirmed
+free allowance is 500 MB/month; direct transfers avoid that allowance. No paid
+plan was enabled. The 1 GiB app limit is separate from relay bandwidth capacity.
+The release is live at code commit 64af704, deployment dep-dbfiile7bikc73dmua40.
+
+86 server tests and 23 client tests passed. Chrome 155 and Edge 156 passed the
+expanded local release check with coturn forced. Chrome passed the same flow
+using the actual public TURN service with relay-only ICE. Checks include both
+file directions and real downloaded SHA-256, cancel/retry, a three-member group
+file to both recipients, non-owner chat, group reconnect, blocking, password
+recovery/change and account cleanup. A separate public TLS-only probe selected
+relay candidates on both sides and exchanged DataChannel messages.
+
+The expanded group check identified a delayed signal targeting a departed peer
+during reconnect. This previously closed the healthy sender. The fix remembers
+a bounded set of departed IDs per live room, ignores those stale signals and
+still rejects unknown IDs, self-targeting and cross-group access. Backend and
+real browser regressions pass after the fix.
+
+The deployed verification pages passed desktop/mobile-width UI checks with
+fixture sessions; health is 200 and private APIs reject anonymous requests.
+Those UI fixtures are not evidence of hosted authenticated transfer. Actual
+phone/mobile-data file transfer and Safari large-file behavior still require the
+owner-assisted checks in CROSS-NETWORK-TEST.md. The app remains on direct-first
+ICE, with TURN as a fallback, not relay-only in normal operation.

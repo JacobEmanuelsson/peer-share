@@ -417,8 +417,8 @@ controls, user blocking, HTTP/WebSocket rate limits and authenticated TURN
 credential delivery are implemented. ICE configuration now lives on the backend,
 not in VITE_STUN_URL. No file content passes through the application backend.
 
-The local coturn configuration is test-only; public TURN credentials/hosting are
-still required for reliable file transfers on restrictive networks. Actual Safari validation is pending owner device testing.
+The local coturn configuration is test-only. The public deployment now has
+a configured free TURN fallback with a 500 MB monthly relay allowance. Actual Safari validation is pending owner device testing.
 No paid subscriptions have been created.
 
 See docs/RELEASE-CHECKLIST.md for architecture, commands, tested behavior,
